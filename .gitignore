@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.pycache/
+*.pyc
+rentwise.db
+.env
+.env.local
