@@ -11,6 +11,7 @@ from app.services.fetchers.overpass_osm import (
     fetch_night_activity_index,
     fetch_noise_proxy,
 )
+from app.services.fetchers.youtube import search_video
 from app.services.fetchers.zillow_zori import read_zori_rows
 from app.services.scoring_service import compute_dimension_scores
 from app.utils.time import is_expired
@@ -43,10 +44,19 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
 
     crime_rate = fetch_crime_rate_per_100k(community.city)
 
+    youtube_video_id = None
+    if existing and existing.youtube_video_id:
+        youtube_video_id = existing.youtube_video_id
+    else:
+        # Search API
+        query = f"{community.name} {community.city or 'Irvine'} tour review"
+        youtube_video_id = search_video(query)
+
     payload: dict = {
         "updated_at": datetime.utcnow(),
         "grocery_density_per_km2": grocery_density,
         "crime_rate_per_100k": crime_rate,
+        "youtube_video_id": youtube_video_id,
         "night_activity_index": None,
         "noise_avg_db": noise_avg_db,
         "noise_p90_db": noise_p90_db,
@@ -86,6 +96,7 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
                 "overpass_night_activity": night_activity_index is not None,
                 "overpass_noise": noise_avg_db is not None,
                 "irvine_crime": crime_rate is not None,
+                "youtube_video": youtube_video_id is not None,
             }
         },
         ensure_ascii=True,

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # Open data / external providers
     socrata_app_token: str | None = None
     yelp_api_key: str | None = None
+    youtube_api_key: str | None = None
     nasa_earthdata_token: str | None = None
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None

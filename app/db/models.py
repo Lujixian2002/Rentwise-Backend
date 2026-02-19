@@ -37,6 +37,7 @@ class CommunityMetrics(Base):
     noise_avg_db: Mapped[float | None] = mapped_column(Float)
     noise_p90_db: Mapped[float | None] = mapped_column(Float)
 
+    youtube_video_id: Mapped[str | None] = mapped_column(String(255))
     overall_confidence: Mapped[float | None] = mapped_column(Float)
     details_json: Mapped[str | None] = mapped_column(Text)
 
