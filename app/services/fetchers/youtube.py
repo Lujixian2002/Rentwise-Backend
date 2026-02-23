@@ -43,9 +43,11 @@ def search_video(query: str) -> str | None:
         return None
 
 
-def fetch_comments(video_id: str, max_results: int = 20) -> list[str]:
+def fetch_comments(video_id: str, max_results: int = 20) -> list[dict]:
     """
     Fetches top-level comments for a given video ID.
+    Returns list of dicts:
+    [{'id': str, 'text': str, 'published_at': str}, ... ]
     """
     settings = get_settings()
     if not settings.youtube_api_key:
@@ -57,6 +59,7 @@ def fetch_comments(video_id: str, max_results: int = 20) -> list[str]:
         "videoId": video_id,
         "maxResults": max_results,
         "textFormat": "plainText",
+        "order": "relevance",
         "key": settings.youtube_api_key,
     }
     url = f"{base_url}?{urllib.parse.urlencode(params)}"
@@ -71,8 +74,12 @@ def fetch_comments(video_id: str, max_results: int = 20) -> list[str]:
             items = data.get("items", [])
             comments = []
             for item in items:
-                comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
-                comments.append(comment)
+                snippet = item["snippet"]["topLevelComment"]["snippet"]
+                comments.append({
+                    "id": item["id"],
+                    "text": snippet["textDisplay"],
+                    "published_at": snippet["publishedAt"]
+                })
             return comments
     except (HTTPError, URLError, OSError) as e:
         print(f"Failed to fetch comments for video {video_id}: {e}")

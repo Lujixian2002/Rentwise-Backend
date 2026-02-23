@@ -11,7 +11,7 @@ from app.services.fetchers.overpass_osm import (
     fetch_night_activity_index,
     fetch_noise_proxy,
 )
-from app.services.fetchers.youtube import search_video
+from app.services.fetchers.youtube import fetch_comments, search_video
 from app.services.fetchers.zillow_zori import read_zori_rows
 from app.services.scoring_service import compute_dimension_scores
 from app.utils.time import is_expired
@@ -51,6 +51,11 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
         # Search API
         query = f"{community.name} {community.city or 'Irvine'} tour review"
         youtube_video_id = search_video(query)
+
+    if youtube_video_id:
+        comments = fetch_comments(youtube_video_id, max_results=20)
+        if comments:
+            crud.save_youtube_comments(db, community_id, youtube_video_id, comments)
 
     payload: dict = {
         "updated_at": datetime.utcnow(),
@@ -124,6 +129,62 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
             details=score_input,
             data_origin="api",
         )
+
+
+def ensure_reviews_fresh(db: Session, community_id: str) -> None:
+    """
+    Checks if we have reviews for this community. If not, fetches from YouTube
+    using the video ID stored in metrics (or searches for one).
+    """
+    # 1. Check if we already have reviews
+    existing_count = crud.get_reviews_count(db, community_id)
+    if existing_count > 0:
+        return
+
+    # 2. Get community & metrics to find video ID
+    community = crud.get_community(db, community_id)
+    if not community:
+        return
+
+    metrics = crud.get_metrics(db, community_id)
+    video_id = metrics.youtube_video_id if metrics else None
+
+    # Helper function to try fetching comments for a given query
+    def try_fetch_with_query(search_q: str) -> bool:
+        print(f"SEARCHING YOUTUBE for '{search_q}'...")
+        vid = search_video(search_q)
+        if not vid:
+            print(f"  -> No video found for '{search_q}'")
+            return False
+        
+        print(f"  -> Found video ID: {vid}")
+        # Try fetching comments
+        comments = fetch_comments(vid, max_results=20)
+        print(f"  -> Fetched {len(comments)} comments via YouTube API")
+        
+        if comments:
+            # We found good stuff! Save video ID and comments
+            metrics_payload = {"youtube_video_id": vid}
+            crud.upsert_metrics(db, community_id, metrics_payload)
+            crud.upsert_review_posts(db, community_id, "youtube", comments)
+            return True
+        return False
+
+    # 3. If no video ID (or existing one yielded 0 comments before?), try to find one now
+    # We'll just check if we have reviews. If not, we try searching fresh even if we have a video_id
+    # (because maybe the old video_id was bad/empty)
+    
+    # Strategy: Try "apartment tour" first
+    if try_fetch_with_query(f"{community.name} {community.city or ''} apartment tour"):
+        return
+
+    # Strategy: Try "living in" second
+    if try_fetch_with_query(f"living in {community.name} {community.city or ''}"):
+        return
+
+    # Strategy: Try just the name + "review"
+    if try_fetch_with_query(f"{community.name} {community.city or ''} review"):
+        return
 
 
 def _to_float(value: str | None) -> float | None:

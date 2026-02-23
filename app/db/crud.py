@@ -5,7 +5,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Community, CommunityComparison, CommunityMetrics, DimensionScore
+from app.db.models import Community, CommunityComparison, CommunityMetrics, DimensionScore, ReviewPost
 
 
 def get_community(db: Session, community_id: str) -> Community | None:
@@ -48,6 +48,7 @@ def upsert_dimension_score(
         DimensionScore.dimension == dimension,
     )
     row = db.execute(stmt).scalar_one_or_none()
+
     if row is None:
         row = DimensionScore(score_id=uuid4().hex, community_id=community_id, dimension=dimension)
         db.add(row)
@@ -61,6 +62,23 @@ def upsert_dimension_score(
     db.commit()
     db.refresh(row)
     return row
+
+
+def get_reviews_by_community(
+    db: Session, community_id: str, limit: int = 50
+) -> list[ReviewPost]:
+    stmt = (
+        select(ReviewPost)
+        .where(ReviewPost.community_id == community_id)
+        .order_by(ReviewPost.posted_at.desc())
+        .limit(limit)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def get_reviews_count(db: Session, community_id: str) -> int:
+    stmt = select(ReviewPost.post_id).where(ReviewPost.community_id == community_id)
+    return len(db.execute(stmt).scalars().all())
 
 
 def create_comparison(
@@ -96,3 +114,49 @@ def create_comparison(
     db.commit()
     db.refresh(row)
     return row
+
+
+def upsert_review_posts(
+    db: Session, community_id: str, platform: str, reviews: list[dict]
+) -> int:
+    """
+    reviews: list of dicts with 'id', 'text', 'published_at'
+    Returns count of new insertions.
+    """
+    incoming_ids = [r["id"] for r in reviews]
+    if not incoming_ids:
+        return 0
+
+    stmt = select(ReviewPost.external_id).where(
+        ReviewPost.community_id == community_id,
+        ReviewPost.platform == platform,
+        ReviewPost.external_id.in_(incoming_ids),
+    )
+    existing_ids = set(db.execute(stmt).scalars().all())
+
+    new_posts = []
+    for r in reviews:
+        if r["id"] not in existing_ids:
+            # Parse datetime if available, else now
+            posted_at = datetime.utcnow()
+            if r.get("published_at"):
+                try:
+                    # YouTube returns ISO 8601 (e.g. 2023-01-01T12:00:00Z)
+                    posted_at = datetime.fromisoformat(r["published_at"].replace("Z", "+00:00"))
+                except ValueError:
+                    pass
+
+            post = ReviewPost(
+                post_id=str(uuid4()),
+                community_id=community_id,
+                platform=platform,
+                external_id=r["id"],
+                body_text=r["text"],
+                posted_at=posted_at,
+            )
+            new_posts.append(post)
+
+    if new_posts:
+        db.add_all(new_posts)
+        db.commit()
+    return len(new_posts)

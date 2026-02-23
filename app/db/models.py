@@ -74,3 +74,14 @@ class CommunityComparison(Base):
     status: Mapped[str | None] = mapped_column(String(16))
     missing_fields_json: Mapped[str | None] = mapped_column(Text)
     data_origin: Mapped[str | None] = mapped_column(String(16))
+
+
+class ReviewPost(Base):
+    __tablename__ = "review_post"
+
+    post_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    community_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False)  # 'youtube'
+    external_id: Mapped[str] = mapped_column(String(255), nullable=False)  # video_id
+    body_text: Mapped[str] = mapped_column(Text, nullable=False)
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime)

@@ -29,6 +29,13 @@ class CommunityMetricsResponse(BaseModel):
     updated_at: datetime | None = None
 
 
+class ReviewResponse(BaseModel):
+    post_id: str
+    platform: str
+    body_text: str
+    posted_at: datetime | None = None
+
+
 class CommunityDetailResponse(BaseModel):
     community: CommunityResponse
     metrics: CommunityMetricsResponse | None = None

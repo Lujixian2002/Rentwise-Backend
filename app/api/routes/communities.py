@@ -3,8 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.db import crud
-from app.schemas.community import CommunityDetailResponse, CommunityMetricsResponse, CommunityResponse
-from app.services.ingest_service import ensure_metrics_fresh
+from app.schemas.community import (
+    CommunityDetailResponse,
+    CommunityMetricsResponse,
+    CommunityResponse,
+    ReviewResponse,
+)
+from app.services.ingest_service import ensure_metrics_fresh, ensure_reviews_fresh
 
 router = APIRouter()
 
@@ -47,3 +52,22 @@ def get_community(community_id: str, db: Session = Depends(get_db)) -> Community
         )
 
     return CommunityDetailResponse(community=community_payload, metrics=metrics_payload)
+
+
+@router.get("/{community_id}/reviews", response_model=list[ReviewResponse])
+def get_community_reviews(
+    community_id: str, db: Session = Depends(get_db)
+) -> list[ReviewResponse]:
+    # Check/fetch fresh reviews if none exist
+    ensure_reviews_fresh(db, community_id)
+    
+    reviews = crud.get_reviews_by_community(db, community_id, limit=50)
+    return [
+        ReviewResponse(
+            post_id=r.post_id,
+            platform=r.platform,
+            body_text=r.body_text,
+            posted_at=r.posted_at,
+        )
+        for r in reviews
+    ]
