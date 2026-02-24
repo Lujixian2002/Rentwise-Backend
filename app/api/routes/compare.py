@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.schemas.comparison import CompareRequest, CompareResponse
 from app.services.compare_service import compare_communities
+from app.services.community_resolver import resolve_community
 from app.services.ingest_service import ensure_metrics_fresh
 
 router = APIRouter()
@@ -11,16 +12,28 @@ router = APIRouter()
 
 @router.post("", response_model=CompareResponse)
 def compare(req: CompareRequest, db: Session = Depends(get_db)) -> CompareResponse:
-    if req.community_a_id == req.community_b_id:
+    community_a = resolve_community(
+        db, community_id=req.community_a_id, community_name=req.community_a_name
+    )
+    community_b = resolve_community(
+        db, community_id=req.community_b_id, community_name=req.community_b_name
+    )
+
+    if community_a is None:
+        raise HTTPException(status_code=404, detail="Community A not found by provided id/name")
+    if community_b is None:
+        raise HTTPException(status_code=404, detail="Community B not found by provided id/name")
+
+    if community_a.community_id == community_b.community_id:
         raise HTTPException(status_code=400, detail="community_a_id and community_b_id must be different")
 
-    ensure_metrics_fresh(db, req.community_a_id)
-    ensure_metrics_fresh(db, req.community_b_id)
+    ensure_metrics_fresh(db, community_a.community_id)
+    ensure_metrics_fresh(db, community_b.community_id)
 
     row, structured_diff, tradeoffs = compare_communities(
         db=db,
-        community_a_id=req.community_a_id,
-        community_b_id=req.community_b_id,
+        community_a_id=community_a.community_id,
+        community_b_id=community_b.community_id,
         weights=req.weights,
     )
 

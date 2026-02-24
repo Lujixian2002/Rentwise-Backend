@@ -1,11 +1,18 @@
 import json
+import re
 from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Community, CommunityComparison, CommunityMetrics, DimensionScore, ReviewPost
+from app.db.models import (
+    Community,
+    CommunityComparison,
+    CommunityMetrics,
+    DimensionScore,
+    ReviewPost,
+)
 
 
 def get_community(db: Session, community_id: str) -> Community | None:
@@ -13,9 +20,60 @@ def get_community(db: Session, community_id: str) -> Community | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
+def get_community_by_name(db: Session, name: str) -> Community | None:
+    normalized = name.strip()
+    if not normalized:
+        return None
+
+    # Try exact match first.
+    exact_stmt = select(Community).where(Community.name.ilike(normalized))
+    exact = db.execute(exact_stmt).scalar_one_or_none()
+    if exact:
+        return exact
+
+    # Fallback to fuzzy match for mild user input variation.
+    fuzzy_stmt = select(Community).where(Community.name.ilike(f"%{normalized}%"))
+    return db.execute(fuzzy_stmt).scalars().first()
+
+
 def get_metrics(db: Session, community_id: str) -> CommunityMetrics | None:
     stmt = select(CommunityMetrics).where(CommunityMetrics.community_id == community_id)
     return db.execute(stmt).scalar_one_or_none()
+
+
+def create_community(
+    db: Session,
+    name: str,
+    city: str | None = None,
+    state: str | None = None,
+    center_lat: float | None = None,
+    center_lng: float | None = None,
+    boundary_geojson: str | None = None,
+) -> Community:
+    base_id = (
+        _to_slug("-".join([p for p in [name, city, state] if p]).strip())
+        or uuid4().hex[:12]
+    )
+    community_id = base_id
+    suffix = 2
+    while get_community(db, community_id) is not None:
+        community_id = f"{base_id}-{suffix}"
+        suffix += 1
+
+    row = Community(
+        community_id=community_id,
+        name=name,
+        city=city,
+        state=state,
+        center_lat=center_lat,
+        center_lng=center_lng,
+        boundary_geojson=boundary_geojson,
+        updated_at=datetime.utcnow(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def upsert_metrics(db: Session, community_id: str, payload: dict) -> CommunityMetrics:
@@ -50,7 +108,9 @@ def upsert_dimension_score(
     row = db.execute(stmt).scalar_one_or_none()
 
     if row is None:
-        row = DimensionScore(score_id=uuid4().hex, community_id=community_id, dimension=dimension)
+        row = DimensionScore(
+            score_id=uuid4().hex, community_id=community_id, dimension=dimension
+        )
         db.add(row)
 
     row.score_0_100 = score_0_100
@@ -142,7 +202,9 @@ def upsert_review_posts(
             if r.get("published_at"):
                 try:
                     # YouTube returns ISO 8601 (e.g. 2023-01-01T12:00:00Z)
-                    posted_at = datetime.fromisoformat(r["published_at"].replace("Z", "+00:00"))
+                    posted_at = datetime.fromisoformat(
+                        r["published_at"].replace("Z", "+00:00")
+                    )
                 except ValueError:
                     pass
 
@@ -160,3 +222,10 @@ def upsert_review_posts(
         db.add_all(new_posts)
         db.commit()
     return len(new_posts)
+
+
+def _to_slug(raw: str) -> str:
+    value = raw.strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+    value = re.sub(r"-{2,}", "-", value)
+    return value.strip("-")
