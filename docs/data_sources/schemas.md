@@ -9,7 +9,7 @@
 | OSM Overpass | `fetch_grocery_density()` | `lat,lng,radius` | Grocery density | `grocery_density_per_km2` |
 | OSM Overpass | `fetch_night_activity_index()` | `lat,lng,radius` | Night activity proxy | `night_activity_index` |
 | OSM Overpass | `fetch_noise_proxy()` | `lat,lng,radius` | Noise proxy | `noise_avg_db`, `noise_p90_db` |
-| Irvine Socrata | `fetch_crime_rate_per_100k()` | `city` | Crime rate per 100k | `crime_rate_per_100k` |
+| Crimeometer API | `fetch_crime_rate_per_100k_with_source()` | `lat,lng,radius,datetime range` | Crime rate per 100k | `crime_rate_per_100k` |
 | Google Maps / ORS | Placeholder | `origin,destination` | Commute minutes | planned (`commute_minutes`) |
 | Reddit / Forums | Not implemented | text posts | Review signal score | planned (`review_signal_score`) |
 
@@ -49,15 +49,15 @@
 ### Null Semantics
 - 返回 `None` 表示请求失败、超时、限流或未找到有效要素。
 
-## 3) Irvine Crime (Socrata)
+## 3) Crime Rate (Crimeometer)
 
 ### Fetcher Output
 | Function | Output | DB Mapping |
 |---|---|---|
-| `fetch_crime_rate_per_100k(city)` | `float | None` | `community_metrics.crime_rate_per_100k` |
+| `fetch_crime_rate_per_100k_with_source(city, center_lat, center_lng)` | `(float | None, str)` | `community_metrics.crime_rate_per_100k` |
 
 ### Current Limitation
-- 当前实现为 catalog discovery + 计数，可能因数据集结构变化导致 `None`。
+- 事件计数转 `per_100k` 目前使用局部人口密度估算（非 census 精确人口）。
 
 ## 4) Scoring Inputs (Service Internal)
 

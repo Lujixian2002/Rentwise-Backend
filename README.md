@@ -29,7 +29,7 @@ RentWise 是一个社区级（community-level）的租房决策支持后端。�
   - grocery density
   - night activity proxy
   - noise proxy（高速/机场邻近度）
-- Irvine crime 抓取尝试（Socrata catalog discovery）
+- Crimeometer crime 抓取（按经纬度半径查询）
 - 维度评分计算与 `dimension_score` 持久化
 - 社区比较结果持久化到 `community_comparison`
 
@@ -201,7 +201,9 @@ curl -X POST http://127.0.0.1:8000/compare \
 - `METRICS_TTL_HOURS`：缓存 TTL（小时）
 - `GOOGLE_MAPS_API_KEY`：Google 通勤 API
 - `OPENROUTESERVICE_API_KEY`：ORS 通勤 API
-- `SOCRATA_APP_TOKEN`：Irvine Open Data API token
+- `CRIMEOMETER_API_KEY`：Crimeometer API key（crime 数据）
+- `CRIMEOMETER_RADIUS_MILES`：crime 查询半径（英里）
+- `CRIMEOMETER_LOOKBACK_DAYS`：crime 回看时间窗口（天）
 - `YELP_API_KEY`：Yelp API
 - `NASA_EARTHDATA_TOKEN`：NASA EarthData token
 - `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET`：Review pipeline 预留
@@ -286,7 +288,7 @@ cat .env | grep DATABASE_URL
 python -c "from app.db.database import engine; print(engine.url)"
 ```
 
-### 问题 4：Overpass/Socrata 返回空导致指标缺失
+### 问题 4：Overpass/Crimeometer 返回空导致指标缺失
 ```bash
 python -m scripts.fetch_irvine_sample
 # 若输出某些指标为 None，通常是外部 API 超时/限流/字段不匹配
@@ -312,7 +314,7 @@ python -m scripts.fetch_irvine_sample
 ## 13. 当前实现状态与 Roadmap
 
 ### 短期
-- 固定 Irvine crime dataset endpoint（减少 discovery 失败）
+- 引入 census/tract 级人口数据，替换当前 crime per100k 的密度估算
 - Overpass 增加重试/退避
 - 将原始 API payload 写入 `community_context`
 

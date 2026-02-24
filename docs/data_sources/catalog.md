@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | Zillow ZORI City CSV | CSV | Local file parse (`zillow_zori.py`) | `median_rent`, `rent_trend_12m_pct` | partial |
 | OpenStreetMap Overpass API | API | HTTP query (`overpass_osm.py`) | `grocery_density_per_km2`, `night_activity_index`, `noise_avg_db`, `noise_p90_db` | partial |
-| Irvine Open Data (Socrata) | API | HTTP query (`irvine_crime.py`) | `crime_rate_per_100k` | partial |
+| Crimeometer | API | HTTP query (`irvine_crime.py`) | `crime_rate_per_100k` | partial |
 | Google Distance Matrix | API | Placeholder (`google_maps.py`) | `commute_minutes` (planned) | planned |
 | OpenRouteService | API | Placeholder (`openrouteservice.py`) | `commute_minutes` fallback (planned) | planned |
 | Reddit / Forums | API | Not implemented | `review_signal_score` (planned) | planned |
@@ -18,7 +18,7 @@
 | Rental location / rent / unit type | Zillow Listings / local file | CSV | local `data/City_zori_uc_sfrcondomfr_sm_month.csv` | Craigslist Listings | API | https://www.craigslist.org | partial |
 | Commute time | Google Distance Matrix API | API | https://developers.google.com/maps/documentation/distance-matrix | OpenRouteService | API | https://openrouteservice.org | planned |
 | Grocery density | OpenStreetMap Overpass API | API | https://www.openstreetmap.org | Yelp Fusion API | API | https://www.yelp.com/developers | partial |
-| Crime rate | City of Irvine Open Data (Socrata) | API | https://data.cityofirvine.org | FBI CDE | API | https://cde.ucr.cjis.gov | partial |
+| Crime rate | Crimeometer | API | https://www.crimeometer.com/ | FBI CDE | API | https://cde.ucr.cjis.gov | partial |
 | Rent trend | Zillow Research Data (ZORI) | CSV | local `data/City_zori_uc_sfrcondomfr_sm_month.csv` | Zillow Research Dataset | CSV | https://www.zillow.com/research/data/ | partial |
 | Nighttime activity proxy | OSM amenity proxy (current) | API | https://www.openstreetmap.org | NASA VIIRS (target) | API | https://earthdata.nasa.gov | partial |
 | Noise exposure | OSM highway/airport proximity | API | https://www.openstreetmap.org | - | - | - | partial |

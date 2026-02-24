@@ -195,6 +195,8 @@ def ensure_metrics_fresh_with_options(
                 "overpass_noise": noise_avg_db is not None,
                 "irvine_crime": crime_rate is not None,
                 "irvine_crime_source": crime_source,
+                "crime_api": crime_rate is not None,
+                "crime_api_source": crime_source,
                 "youtube_video": bool(youtube_video_ids),
                 "commute_minutes": commute_minutes,
                 "viirs_night_activity": night_activity_source == "local_viirs",

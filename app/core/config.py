@@ -17,6 +17,11 @@ class Settings(BaseSettings):
 
     # Open data / external providers
     socrata_app_token: str | None = None
+    crimeometer_api_key: str | None = None
+    crimeometer_base_url: str = "https://api.crimeometer.com/v1/incidents/raw-data"
+    crimeometer_radius_miles: float = 1.0
+    crimeometer_lookback_days: int = 365
+    crimeometer_timeout_sec: int = 12
     crime_enable_fallback: bool = False
     crime_fallback_per_100k: float = 280.0
     yelp_api_key: str | None = None
