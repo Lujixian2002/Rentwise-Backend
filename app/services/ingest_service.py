@@ -60,10 +60,14 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
     if not youtube_video_ids:
         # Strategies to cover different aspects: reviews, lifestyle, vlogs
         search_templates = [
+            f"{community.name} {community.city or 'Irvine'}",
             f"{community.name} {community.city or 'Irvine'} apartments review",
             f"{community.name} {community.city or 'Irvine'} living",
             f"{community.name} {community.city or 'Irvine'} tour", 
             f"Living in {community.name} {community.city or 'Irvine'}",
+            f"{community.name} vlog",
+            f"{community.name} walking tour",
+            f"Pros and cons of living in {community.name}",
         ]
 
         # Use a set to avoid duplicate video IDs across different search queries
@@ -71,9 +75,9 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
 
         for query in search_templates:
             # Search for videos
-            # We limit main results to 3 per query to avoid hitting quota limits too fast,
+            # We limit main results to 5 per query to avoid hitting quota limits too fast,
             # but since we run multiple queries, we'll get a good mix.
-            ids = search_videos(query, max_results=3)
+            ids = search_videos(query, max_results=5)
             if ids:
                 found_ids_set.update(ids)
         
@@ -83,8 +87,8 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
     # Fetch comments for all unique videos found
     if youtube_video_ids:
         for vid in youtube_video_ids:
-            # Limit per video to control quota/size
-            comments = fetch_comments(vid, max_results=10)
+            # Limit per video to control quota/size (increased to 50)
+            comments = fetch_comments(vid, max_results=50)
             if comments:
                 youtube_comments.extend(comments)
 

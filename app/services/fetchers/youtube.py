@@ -43,34 +43,54 @@ def search_videos(query: str, max_results: int = 5) -> list[str]:
 def fetch_comments(video_id: str, max_results: int = 20) -> list[str]:
     """
     Fetches top-level comments for a given video ID.
+    Supports fetching up to 100 comments via pagination (if max_results set higher).
     """
     settings = get_settings()
     if not settings.youtube_api_key:
         return []
 
     base_url = "https://www.googleapis.com/youtube/v3/commentThreads"
-    params = {
-        "part": "snippet",
-        "videoId": video_id,
-        "maxResults": max_results,
-        "textFormat": "plainText",
-        "key": settings.youtube_api_key,
-    }
-    url = f"{base_url}?{urllib.parse.urlencode(params)}"
-
+    all_comments = []
+    next_page_token = None
+    
+    # YouTube API maxResults per page is 100.
+    page_size = min(max_results, 100)
+    
     try:
-        req = Request(url)
-        with urlopen(req) as response:
-            if response.status != 200:
-                print(f"Error fetching comments: HTTP {response.status}")
-                return []
-            data = json.loads(response.read().decode())
-            items = data.get("items", [])
-            comments = []
-            for item in items:
-                comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
-                comments.append(comment)
-            return comments
+        while len(all_comments) < max_results:
+            params = {
+                "part": "snippet",
+                "videoId": video_id,
+                "maxResults": page_size,
+                "textFormat": "plainText",
+                "key": settings.youtube_api_key,
+            }
+            if next_page_token:
+                params["pageToken"] = next_page_token
+
+            url = f"{base_url}?{urllib.parse.urlencode(params)}"
+            req = Request(url)
+            
+            with urlopen(req) as response:
+                if response.status != 200:
+                    print(f"Error fetching comments: HTTP {response.status}")
+                    break
+                    
+                data = json.loads(response.read().decode())
+                items = data.get("items", [])
+                
+                for item in items:
+                    comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+                    all_comments.append(comment)
+                    if len(all_comments) >= max_results:
+                        break
+                
+                next_page_token = data.get("nextPageToken")
+                if not next_page_token:
+                    break
+                    
+        return all_comments
+            
     except (HTTPError, URLError, OSError) as e:
         print(f"Failed to fetch comments for video {video_id}: {e}")
-        return []
+        return all_comments
