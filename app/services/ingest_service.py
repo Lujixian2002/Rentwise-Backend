@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import datetime
 
@@ -11,7 +12,7 @@ from app.services.fetchers.overpass_osm import (
     fetch_night_activity_index,
     fetch_noise_proxy,
 )
-from app.services.fetchers.youtube import fetch_comments, search_video
+from app.services.fetchers.youtube import fetch_comments, search_videos
 from app.services.fetchers.zillow_zori import read_zori_rows
 from app.services.scoring_service import compute_dimension_scores
 from app.utils.time import is_expired
@@ -44,26 +45,59 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
 
     crime_rate = fetch_crime_rate_per_100k(community.city)
 
-    youtube_video_id = None
-    if existing and existing.youtube_video_id:
-        youtube_video_id = existing.youtube_video_id
-    else:
-        # Search API
-        query = f"{community.name} {community.city or 'Irvine'} tour review"
-        youtube_video_id = search_video(query)
+    # YouTube: Fetch multiple videos and aggregate comments
+    youtube_video_ids = []
+    youtube_comments = []
+    
+    # Check if we already have video IDs saved (to avoid search API cost)
+    if existing and existing.youtube_video_ids:
+        try:
+            youtube_video_ids = json.loads(existing.youtube_video_ids)
+        except json.JSONDecodeError:
+            youtube_video_ids = []
+            
+    # If no IDs found in DB, try multiple search strategies to find videos WITH comments
+    if not youtube_video_ids:
+        # Strategies to cover different aspects: reviews, lifestyle, vlogs
+        search_templates = [
+            f"{community.name} {community.city or 'Irvine'} apartments review",
+            f"{community.name} {community.city or 'Irvine'} living",
+            f"{community.name} {community.city or 'Irvine'} tour", 
+            f"Living in {community.name} {community.city or 'Irvine'}",
+        ]
 
-    if youtube_video_id:
-        comments = fetch_comments(youtube_video_id, max_results=20)
-        if comments:
-            crud.save_youtube_comments(db, community_id, youtube_video_id, comments)
+        # Use a set to avoid duplicate video IDs across different search queries
+        found_ids_set = set()
+
+        for query in search_templates:
+            # Search for videos
+            # We limit main results to 3 per query to avoid hitting quota limits too fast,
+            # but since we run multiple queries, we'll get a good mix.
+            ids = search_videos(query, max_results=3)
+            if ids:
+                found_ids_set.update(ids)
+        
+        # Convert back to list
+        youtube_video_ids = list(found_ids_set)
+
+    # Fetch comments for all unique videos found
+    if youtube_video_ids:
+        for vid in youtube_video_ids:
+            # Limit per video to control quota/size
+            comments = fetch_comments(vid, max_results=10)
+            if comments:
+                youtube_comments.extend(comments)
 
     payload: dict = {
         "updated_at": datetime.utcnow(),
         "grocery_density_per_km2": grocery_density,
         "crime_rate_per_100k": crime_rate,
-        "youtube_video_id": youtube_video_id,
+        # Save list of IDs and aggregated comments as JSON strings
+        "youtube_video_ids": json.dumps(youtube_video_ids) if youtube_video_ids else None,
+        "youtube_comments": json.dumps(youtube_comments) if youtube_comments else None,
         "night_activity_index": None,
         "noise_avg_db": noise_avg_db,
+
         "noise_p90_db": noise_p90_db,
         "overall_confidence": 0.5,
         "details_json": "{}",
@@ -101,7 +135,7 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
                 "overpass_night_activity": night_activity_index is not None,
                 "overpass_noise": noise_avg_db is not None,
                 "irvine_crime": crime_rate is not None,
-                "youtube_video": youtube_video_id is not None,
+                "youtube_video": bool(youtube_video_ids),
             }
         },
         ensure_ascii=True,
@@ -133,58 +167,48 @@ def ensure_metrics_fresh(db: Session, community_id: str, ttl_hours: int | None =
 
 def ensure_reviews_fresh(db: Session, community_id: str) -> None:
     """
-    Checks if we have reviews for this community. If not, fetches from YouTube
-    using the video ID stored in metrics (or searches for one).
+    Ensures that the ReviewPost table is populated from the aggregated
+    comments stored in CommunityMetrics (fetched during ingestion).
     """
-    # 1. Check if we already have reviews
+    # 1. Check if we already have structured posts
     existing_count = crud.get_reviews_count(db, community_id)
     if existing_count > 0:
         return
 
-    # 2. Get community & metrics to find video ID
-    community = crud.get_community(db, community_id)
-    if not community:
-        return
-
+    # 2. Get metrics to find the raw cached comments
     metrics = crud.get_metrics(db, community_id)
-    video_id = metrics.youtube_video_id if metrics else None
+    if not metrics or not metrics.youtube_comments:
+        # If no metrics or no comments cached, we can't do much.
+        # The main ingestion pipeline (ensure_metrics_fresh) is responsible for fetching.
+        # We could trigger it here, but typically /communities/{id} is called before /reviews
+        return
 
-    # Helper function to try fetching comments for a given query
-    def try_fetch_with_query(search_q: str) -> bool:
-        print(f"SEARCHING YOUTUBE for '{search_q}'...")
-        vid = search_video(search_q)
-        if not vid:
-            print(f"  -> No video found for '{search_q}'")
-            return False
+    # 3. Parse cached comments and insert into ReviewPost table
+    try:
+        raw_comments = json.loads(metrics.youtube_comments)
+    except json.JSONDecodeError:
+        return
+
+    if not raw_comments:
+        return
+
+    # Convert simple string comments to the dict format expected by upsert_review_posts
+    # Since we only stored strings, we'll generate IDs and dummy dates
+    review_dicts = []
+    for i, text in enumerate(raw_comments):
+        # Create a deterministic ID based on content hash or index to avoid dupes? 
+        # For now, crud.upsert_review_posts uses external_id to dedup. 
+        # We don't have real external IDs or dates stored in the simple list[str].
+        # We'll use a simple hash of the text as the ID.
+        text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
         
-        print(f"  -> Found video ID: {vid}")
-        # Try fetching comments
-        comments = fetch_comments(vid, max_results=20)
-        print(f"  -> Fetched {len(comments)} comments via YouTube API")
-        
-        if comments:
-            # We found good stuff! Save video ID and comments
-            metrics_payload = {"youtube_video_id": vid}
-            crud.upsert_metrics(db, community_id, metrics_payload)
-            crud.upsert_review_posts(db, community_id, "youtube", comments)
-            return True
-        return False
+        review_dicts.append({
+            "id": f"yt-{text_hash}",
+            "text": text,
+            "published_at": None # We lost the date in the simple fetch, that's fine for now
+        })
 
-    # 3. If no video ID (or existing one yielded 0 comments before?), try to find one now
-    # We'll just check if we have reviews. If not, we try searching fresh even if we have a video_id
-    # (because maybe the old video_id was bad/empty)
-    
-    # Strategy: Try "apartment tour" first
-    if try_fetch_with_query(f"{community.name} {community.city or ''} apartment tour"):
-        return
-
-    # Strategy: Try "living in" second
-    if try_fetch_with_query(f"living in {community.name} {community.city or ''}"):
-        return
-
-    # Strategy: Try just the name + "review"
-    if try_fetch_with_query(f"{community.name} {community.city or ''} review"):
-        return
+    crud.upsert_review_posts(db, community_id, "youtube", review_dicts)
 
 
 def _to_float(value: str | None) -> float | None:

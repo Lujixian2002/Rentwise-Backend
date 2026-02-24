@@ -36,10 +36,28 @@ SEED_ROWS = [
         "center_lat": 33.6381,
         "center_lng": -117.8107,
     },
+    {
+        "community_id": "northwood",
+        "name": "Northwood",
+        "city": "Irvine",
+        "state": "CA",
+        "center_lat": 33.7081,
+        "center_lng": -117.7739,
+    },
+    {
+        "community_id": "costa-mesa-border",
+        "name": "Costa Mesa Border",
+        "city": "Costa Mesa",  # Providing closest city helps the search logic
+        "state": "CA",
+        "center_lat": 33.6412,
+        "center_lng": -117.9184,
+    },
 ]
 
 
 def main() -> None:
+    # Drop all tables to ensure schema matches current models
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

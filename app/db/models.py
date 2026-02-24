@@ -37,8 +37,13 @@ class CommunityMetrics(Base):
     noise_avg_db: Mapped[float | None] = mapped_column(Float)
     noise_p90_db: Mapped[float | None] = mapped_column(Float)
 
-    youtube_video_id: Mapped[str | None] = mapped_column(String(255))
+    # Storing a list of video IDs as a JSON string
+    youtube_video_ids: Mapped[str | None] = mapped_column(Text)
+    # Storing aggregated comments as a JSON string
+    youtube_comments: Mapped[str | None] = mapped_column(Text)
+    
     overall_confidence: Mapped[float | None] = mapped_column(Float)
+    details_json: Mapped[str | None] = mapped_column(Text)
     details_json: Mapped[str | None] = mapped_column(Text)
 
 
@@ -80,8 +85,10 @@ class ReviewPost(Base):
     __tablename__ = "review_post"
 
     post_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    community_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    platform: Mapped[str] = mapped_column(String(16), nullable=False)  # 'youtube'
-    external_id: Mapped[str] = mapped_column(String(255), nullable=False)  # video_id
-    body_text: Mapped[str] = mapped_column(Text, nullable=False)
+    community_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    platform: Mapped[str | None] = mapped_column(String(32))
+    external_id: Mapped[str | None] = mapped_column(String(128))
+    url: Mapped[str | None] = mapped_column(Text)
     posted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    title: Mapped[str | None] = mapped_column(Text)
+    body_text: Mapped[str | None] = mapped_column(Text)

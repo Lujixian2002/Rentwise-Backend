@@ -8,21 +8,21 @@ from urllib.request import Request, urlopen
 from app.core.config import get_settings
 
 
-def search_video(query: str) -> str | None:
+def search_videos(query: str, max_results: int = 5) -> list[str]:
     """
-    Searches YouTube for a video matching the query.
-    Returns the first Video ID found, or None.
+    Searches YouTube for videos matching the query.
+    Returns a list of Video IDs found.
     """
     settings = get_settings()
     if not settings.youtube_api_key:
-        return None
+        return []
 
     base_url = "https://www.googleapis.com/youtube/v3/search"
     params = {
         "part": "snippet",
         "q": query,
         "type": "video",
-        "maxResults": 1,
+        "maxResults": max_results,
         "key": settings.youtube_api_key,
     }
     url = f"{base_url}?{urllib.parse.urlencode(params)}"
@@ -31,23 +31,18 @@ def search_video(query: str) -> str | None:
         req = Request(url)
         with urlopen(req) as response:
             if response.status != 200:
-                return None
+                return []
             data = json.loads(response.read().decode())
             items = data.get("items", [])
-            if not items:
-                return None
-            # Extract video ID from the first result
-            video_id = items[0]["id"]["videoId"]
-            return video_id
+            video_ids = [item["id"]["videoId"] for item in items if "id" in item and "videoId" in item["id"]]
+            return video_ids
     except (HTTPError, URLError, OSError):
-        return None
+        return []
 
 
-def fetch_comments(video_id: str, max_results: int = 20) -> list[dict]:
+def fetch_comments(video_id: str, max_results: int = 20) -> list[str]:
     """
     Fetches top-level comments for a given video ID.
-    Returns list of dicts:
-    [{'id': str, 'text': str, 'published_at': str}, ... ]
     """
     settings = get_settings()
     if not settings.youtube_api_key:
@@ -59,7 +54,6 @@ def fetch_comments(video_id: str, max_results: int = 20) -> list[dict]:
         "videoId": video_id,
         "maxResults": max_results,
         "textFormat": "plainText",
-        "order": "relevance",
         "key": settings.youtube_api_key,
     }
     url = f"{base_url}?{urllib.parse.urlencode(params)}"
@@ -74,12 +68,8 @@ def fetch_comments(video_id: str, max_results: int = 20) -> list[dict]:
             items = data.get("items", [])
             comments = []
             for item in items:
-                snippet = item["snippet"]["topLevelComment"]["snippet"]
-                comments.append({
-                    "id": item["id"],
-                    "text": snippet["textDisplay"],
-                    "published_at": snippet["publishedAt"]
-                })
+                comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+                comments.append(comment)
             return comments
     except (HTTPError, URLError, OSError) as e:
         print(f"Failed to fetch comments for video {video_id}: {e}")
