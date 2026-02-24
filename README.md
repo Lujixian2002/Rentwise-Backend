@@ -218,6 +218,18 @@ DATABASE_URL=postgresql+psycopg2://rentwise_user:ddbswdjx@localhost:5432/rentwis
 
 请从项目根目录执行命令（非常重要，避免 `No module named app`）。
 
+### Docker Compose（后端 + Postgres）
+
+```bash
+docker compose -f docker-compose.backend.yml up --build
+```
+
+停止：
+
+```bash
+docker compose -f docker-compose.backend.yml down
+```
+
 ### 启动数据库（示例）
 ```bash
 docker run -d \
