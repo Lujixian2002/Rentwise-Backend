@@ -1,4 +1,15 @@
 -- =========================
+-- RESET TABLES
+-- =========================
+DROP TABLE IF EXISTS review_signal CASCADE;
+DROP TABLE IF EXISTS review_post CASCADE;
+DROP TABLE IF EXISTS community_context CASCADE;
+DROP TABLE IF EXISTS dimension_score CASCADE;
+DROP TABLE IF EXISTS community_comparison CASCADE;
+DROP TABLE IF EXISTS community_metrics CASCADE;
+DROP TABLE IF EXISTS community CASCADE;
+
+-- =========================
 -- 1) COMMUNITY
 -- =========================
 CREATE TABLE community (
