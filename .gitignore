@@ -6,3 +6,4 @@ rentwise.db
 .env
 .env.local
 data/
+.vscode/
