@@ -6,3 +6,5 @@ rentwise.db
 .env
 .env.local
 data/
+# ignore huge raster data
+data/viirs_nightlights_2025-12_tile_75N180W/
