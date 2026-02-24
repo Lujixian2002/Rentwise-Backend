@@ -11,12 +11,21 @@ class Settings(BaseSettings):
     # Routing / commute APIs
     google_maps_api_key: str | None = None
     openrouteservice_api_key: str | None = None
+    commute_destination_lat: float = 33.6405  # UCI default
+    commute_destination_lng: float = -117.8443
+    prefer_google_commute: bool = True
 
     # Open data / external providers
     socrata_app_token: str | None = None
+    crime_enable_fallback: bool = False
+    crime_fallback_per_100k: float = 280.0
     yelp_api_key: str | None = None
     youtube_api_key: str | None = None
     nasa_earthdata_token: str | None = None
+    viirs_days_back: int = 30
+    viirs_bbox_radius_km: float = 10.0
+    viirs_local_radiance_tif: str = "data/viirs_nightlights_2025-12_tile_00N060W/avg_radiance.tif"
+    viirs_sample_radius_km: float = 2.0
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None
 

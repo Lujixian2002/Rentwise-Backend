@@ -252,6 +252,18 @@ uvicorn app.main:app --reload
 
 说明：外部 API 的不稳定性可能导致部分字段空值，这是当前阶段可接受行为。
 
+## SQL 共享（团队协作）
+
+项目已提供 `sql/` 目录用于共享结构和样本数据：
+- `sql/1_create_tables.sql`
+- `sql/2_insert_statements.sql`
+
+导出当前数据库为可共享 SQL：
+
+```bash
+python -m scripts.export_share_sql --output sql/2_insert_statements.sql
+```
+
 ## 11. 调试指南（常见报错）
 
 ### 问题 1：`ModuleNotFoundError: No module named 'sqlalchemy'`

@@ -5,6 +5,7 @@
 | Source | Fetcher / Method | Raw Input | Output Metric(s) | DB Field(s) |
 |---|---|---|---|---|
 | Zillow ZORI City CSV | `read_zori_rows()` in `zillow_zori.py` | `RegionName/RegionType/State/时间序列列` | 最新租金、12个月趋势 | `median_rent`, `rent_trend_12m_pct` |
+| VIIRS Night Lights (local tif) | `fetch_viirs_night_activity_index()` in `nasa_viirs.py` | `avg_radiance.tif` + community lat/lng | Night activity index | `night_activity_index` |
 | OSM Overpass | `fetch_grocery_density()` | `lat,lng,radius` | Grocery density | `grocery_density_per_km2` |
 | OSM Overpass | `fetch_night_activity_index()` | `lat,lng,radius` | Night activity proxy | `night_activity_index` |
 | OSM Overpass | `fetch_noise_proxy()` | `lat,lng,radius` | Noise proxy | `noise_avg_db`, `noise_p90_db` |

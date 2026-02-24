@@ -6,12 +6,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_TIMEOUT_SEC = 8
 
 
 def fetch_grocery_density(center_lat: float, center_lng: float, radius_km: float = 1.0) -> float | None:
     radius_m = int(radius_km * 1000)
     query = f"""
-    [out:json][timeout:25];
+    [out:json][timeout:8];
     (
       node(around:{radius_m},{center_lat},{center_lng})["shop"~"supermarket|grocery|convenience"];
       way(around:{radius_m},{center_lat},{center_lng})["shop"~"supermarket|grocery|convenience"];
@@ -32,7 +33,7 @@ def fetch_grocery_density(center_lat: float, center_lng: float, radius_km: float
 def fetch_night_activity_index(center_lat: float, center_lng: float, radius_km: float = 1.5) -> float | None:
     radius_m = int(radius_km * 1000)
     query = f"""
-    [out:json][timeout:25];
+    [out:json][timeout:8];
     (
       node(around:{radius_m},{center_lat},{center_lng})["amenity"~"bar|pub|nightclub"];
       way(around:{radius_m},{center_lat},{center_lng})["amenity"~"bar|pub|nightclub"];
@@ -53,7 +54,7 @@ def fetch_night_activity_index(center_lat: float, center_lng: float, radius_km: 
 def fetch_noise_proxy(center_lat: float, center_lng: float, radius_km: float = 5.0) -> tuple[float | None, float | None]:
     radius_m = int(radius_km * 1000)
     query = f"""
-    [out:json][timeout:25];
+    [out:json][timeout:8];
     (
       way(around:{radius_m},{center_lat},{center_lng})["highway"~"motorway|trunk|primary"];
       relation(around:{radius_m},{center_lat},{center_lng})["highway"~"motorway|trunk|primary"];
@@ -105,7 +106,7 @@ def _query_overpass(query: str) -> dict | None:
         method="POST",
     )
     try:
-        with urlopen(req, timeout=25) as resp:
+        with urlopen(req, timeout=OVERPASS_TIMEOUT_SEC) as resp:
             body = resp.read().decode("utf-8")
             return json.loads(body)
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
