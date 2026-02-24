@@ -43,6 +43,9 @@ CREATE TABLE community_metrics (
   noise_avg_db             double precision,
   noise_p90_db             double precision,
 
+  youtube_video_ids        text,
+  youtube_comments         text,
+
   overall_confidence       double precision,
   details_json             text
 );
