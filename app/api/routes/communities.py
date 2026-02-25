@@ -61,13 +61,17 @@ def get_community_reviews(
     # Check/fetch fresh reviews if none exist
     ensure_reviews_fresh(db, community_id)
     
-    reviews = crud.get_reviews_by_community(db, community_id, limit=50)
+    reviews = crud.get_reviews_by_community(db, community_id, limit=200)
     return [
         ReviewResponse(
             post_id=r.post_id,
             platform=r.platform,
+            external_id=r.external_id,
             body_text=r.body_text,
             posted_at=r.posted_at,
+            author_name=r.author_name,
+            like_count=r.like_count,
+            parent_id=r.parent_id,
         )
         for r in reviews
     ]

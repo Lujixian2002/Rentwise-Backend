@@ -92,3 +92,8 @@ class ReviewPost(Base):
     posted_at: Mapped[datetime | None] = mapped_column(DateTime)
     title: Mapped[str | None] = mapped_column(Text)
     body_text: Mapped[str | None] = mapped_column(Text)
+    
+    # New fields for structured relationships
+    parent_id: Mapped[str | None] = mapped_column(String(128)) # external_id of the parent post/comment
+    author_name: Mapped[str | None] = mapped_column(String(128))
+    like_count: Mapped[int | None] = mapped_column(Float)

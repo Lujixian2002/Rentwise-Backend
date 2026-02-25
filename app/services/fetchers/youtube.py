@@ -40,10 +40,10 @@ def search_videos(query: str, max_results: int = 5) -> list[str]:
         return []
 
 
-def fetch_comments(video_id: str, max_results: int = 20) -> list[str]:
+def fetch_comments(video_id: str, max_results: int = 20) -> list[dict]:
     """
-    Fetches top-level comments for a given video ID.
-    Supports fetching up to 100 comments via pagination (if max_results set higher).
+    Fetches top-level comments and their replies for a given video ID.
+    Returns a list of dictionaries containing structured comment data.
     """
     settings = get_settings()
     if not settings.youtube_api_key:
@@ -59,7 +59,7 @@ def fetch_comments(video_id: str, max_results: int = 20) -> list[str]:
     try:
         while len(all_comments) < max_results:
             params = {
-                "part": "snippet",
+                "part": "snippet,replies",
                 "videoId": video_id,
                 "maxResults": page_size,
                 "textFormat": "plainText",
@@ -80,8 +80,36 @@ def fetch_comments(video_id: str, max_results: int = 20) -> list[str]:
                 items = data.get("items", [])
                 
                 for item in items:
-                    comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
-                    all_comments.append(comment)
+                    # Top-level comment
+                    top_level = item["snippet"]["topLevelComment"]
+                    snippet = top_level["snippet"]
+                    
+                    comment_data = {
+                        "id": top_level["id"],
+                        "text": snippet["textDisplay"],
+                        "author": snippet.get("authorDisplayName", "Unknown"),
+                        "like_count": snippet.get("likeCount", 0),
+                        "published_at": snippet.get("publishedAt"),
+                        "parent_id": None, # It's a top-level comment
+                        "video_id": video_id
+                    }
+                    all_comments.append(comment_data)
+                    
+                    # Fetch replies if they exist in the response
+                    if "replies" in item:
+                        for reply in item["replies"]["comments"]:
+                            reply_snippet = reply["snippet"]
+                            reply_data = {
+                                "id": reply["id"],
+                                "text": reply_snippet["textDisplay"],
+                                "author": reply_snippet.get("authorDisplayName", "Unknown"),
+                                "like_count": reply_snippet.get("likeCount", 0),
+                                "published_at": reply_snippet.get("publishedAt"),
+                                "parent_id": top_level["id"], # Link to parent
+                                "video_id": video_id
+                            }
+                            all_comments.append(reply_data)
+                            
                     if len(all_comments) >= max_results:
                         break
                 

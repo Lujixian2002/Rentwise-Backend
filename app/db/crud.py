@@ -215,6 +215,9 @@ def upsert_review_posts(
                 external_id=r["id"],
                 body_text=r["text"],
                 posted_at=posted_at,
+                author_name=r.get("author_name"),
+                like_count=r.get("like_count"),
+                parent_id=r.get("parent_id"),
             )
             new_posts.append(post)
 

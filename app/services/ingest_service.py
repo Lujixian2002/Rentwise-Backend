@@ -257,23 +257,28 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
     if not raw_comments:
         return
 
-    # Convert simple string comments to the dict format expected by upsert_review_posts
-    # Since we only stored strings, we'll generate IDs and dummy dates
     review_dicts = []
-    for i, text in enumerate(raw_comments):
-        # Create a deterministic ID based on content hash or index to avoid dupes?
-        # For now, crud.upsert_review_posts uses external_id to dedup.
-        # We don't have real external IDs or dates stored in the simple list[str].
-        # We'll use a simple hash of the text as the ID.
-        text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
-
-        review_dicts.append(
-            {
-                "id": f"yt-{text_hash}",
-                "text": text,
-                "published_at": None,  # We lost the date in the simple fetch, that's fine for now
-            }
-        )
+    for item in raw_comments:
+        if isinstance(item, dict):
+            # New structured format
+            review_dicts.append({
+                "id": item.get("id"),
+                "text": item.get("text"),
+                "published_at": item.get("published_at"),
+                "author_name": item.get("author"),
+                "like_count": item.get("like_count"),
+                "parent_id": item.get("parent_id"),
+            })
+        else:
+            # Fallback for old simple string format
+            text_hash = hashlib.md5(item.encode("utf-8")).hexdigest()
+            review_dicts.append(
+                {
+                    "id": f"yt-{text_hash}",
+                    "text": item,
+                    "published_at": None,
+                }
+            )
 
     crud.upsert_review_posts(db, community_id, "youtube", review_dicts)
 
