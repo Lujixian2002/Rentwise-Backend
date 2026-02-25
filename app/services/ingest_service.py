@@ -97,6 +97,12 @@ def ensure_metrics_fresh_with_options(
         if night_activity_source == "none":
             night_activity_source = "default"
 
+    # Keep noise metrics stable: fallback to previous cached values.
+    if noise_avg_db is None and existing and existing.noise_avg_db is not None:
+        noise_avg_db = existing.noise_avg_db
+    if noise_p90_db is None and existing and existing.noise_p90_db is not None:
+        noise_p90_db = existing.noise_p90_db
+
     crime_rate = None
     crime_source = "skipped" if skip_external else "missing"
     if not skip_external:

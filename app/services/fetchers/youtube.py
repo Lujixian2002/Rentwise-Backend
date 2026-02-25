@@ -8,6 +8,20 @@ from urllib.request import Request, urlopen
 from app.core.config import get_settings
 
 
+def _extract_google_error_reason(error: HTTPError) -> str | None:
+    try:
+        payload = error.read().decode("utf-8")
+        data = json.loads(payload)
+        errors = data.get("error", {}).get("errors", [])
+        if errors and isinstance(errors[0], dict):
+            reason = errors[0].get("reason")
+            if isinstance(reason, str) and reason:
+                return reason
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return None
+
+
 def search_videos(query: str, max_results: int = 5) -> list[str]:
     """
     Searches YouTube for videos matching the query.
@@ -119,6 +133,21 @@ def fetch_comments(video_id: str, max_results: int = 20) -> list[dict]:
                     
         return all_comments
             
-    except (HTTPError, URLError, OSError) as e:
+    except HTTPError as e:
+        reason = _extract_google_error_reason(e)
+        # Common non-fatal cases for commentThreads:
+        # commentsDisabled / forbidden / videoNotFound.
+        if e.code in (403, 404) and reason in {
+            "commentsDisabled",
+            "forbidden",
+            "videoNotFound",
+        }:
+            return all_comments
+        print(
+            f"Failed to fetch comments for video {video_id}: "
+            f"HTTP {e.code}, reason={reason or 'unknown'}"
+        )
+        return all_comments
+    except (URLError, OSError) as e:
         print(f"Failed to fetch comments for video {video_id}: {e}")
         return all_comments
