@@ -73,13 +73,16 @@ CREATE TABLE review_post (
   url           text,
   posted_at     timestamp,
   title         text,
-  body_text     text
+  body_text     text,
+  parent_id     varchar(128),
+  author_name   varchar(128),
+  like_count    double precision
 );
 
 -- Optional (recommended): prevent duplicate crawls per platform
 -- If you truly want zero constraints beyond PK, remove this.
 CREATE UNIQUE INDEX ux_review_post_platform_external
-  ON review_post(platform, external_id)
+  ON review_post(community_id, platform, external_id)
   WHERE external_id IS NOT NULL;
 
 -- =========================

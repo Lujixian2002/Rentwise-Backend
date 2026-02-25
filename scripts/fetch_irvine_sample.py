@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from app.db.database import Base, SessionLocal, engine
 from app.db.models import Community, CommunityMetrics, DimensionScore
-from app.services.ingest_service import ensure_metrics_fresh_with_options
+from app.services.ingest_service import ensure_metrics_fresh_with_options, ensure_reviews_fresh
 from scripts.seed_communities import SEED_ROWS
 
 
@@ -28,6 +28,7 @@ def main() -> None:
                 ttl_hours=ttl_hours,
                 skip_external=args.skip_external,
             )
+            ensure_reviews_fresh(db, community_id)
 
         _print_summary(db)
     finally:

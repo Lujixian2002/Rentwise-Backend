@@ -32,8 +32,12 @@ class CommunityMetricsResponse(BaseModel):
 class ReviewResponse(BaseModel):
     post_id: str
     platform: str
+    external_id: str | None = None
     body_text: str
     posted_at: datetime | None = None
+    author_name: str | None = None
+    like_count: float | None = None
+    parent_id: str | None = None
 
 
 class CommunityDetailResponse(BaseModel):
