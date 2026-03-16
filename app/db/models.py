@@ -42,6 +42,9 @@ class CommunityMetrics(Base):
     # Storing aggregated comments as a JSON string
     youtube_comments: Mapped[str | None] = mapped_column(Text)
     
+    # Storing aggregated Google Maps reviews as a JSON string
+    google_reviews: Mapped[str | None] = mapped_column(Text)
+    
     overall_confidence: Mapped[float | None] = mapped_column(Float)
     details_json: Mapped[str | None] = mapped_column(Text)
     details_json: Mapped[str | None] = mapped_column(Text)

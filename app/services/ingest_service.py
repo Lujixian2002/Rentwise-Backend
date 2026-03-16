@@ -9,6 +9,7 @@ from app.db import crud
 from app.services.fetchers.irvine_crime import fetch_crime_rate_per_100k_with_source
 from app.services.fetchers.google_maps import (
     fetch_commute_minutes as fetch_google_commute_minutes,
+    fetch_google_reviews,
 )
 from app.services.fetchers.nasa_viirs import fetch_viirs_night_activity_index
 from app.services.fetchers.openrouteservice import (
@@ -149,6 +150,14 @@ def ensure_metrics_fresh_with_options(
             if comments:
                 youtube_comments.extend(comments)
 
+    # Google Maps Reviews fetching
+    google_reviews = []
+    if not skip_external:
+        search_keyword = f"{community.name} {community.city or 'Irvine'} apartments"
+        raw_google_reviews = fetch_google_reviews(search_keyword)
+        # Extract just the text to match the current simple string format used for youtube
+        google_reviews = [r.get("text") for r in raw_google_reviews if r.get("text")]
+
     payload: dict = {
         "updated_at": datetime.utcnow(),
         "grocery_density_per_km2": grocery_density,
@@ -158,6 +167,7 @@ def ensure_metrics_fresh_with_options(
             json.dumps(youtube_video_ids) if youtube_video_ids else None
         ),
         "youtube_comments": json.dumps(youtube_comments) if youtube_comments else None,
+        "google_reviews": json.dumps(google_reviews) if google_reviews else None,
         "night_activity_index": night_activity_index,
         "noise_avg_db": noise_avg_db,
         "noise_p90_db": noise_p90_db,
@@ -198,6 +208,7 @@ def ensure_metrics_fresh_with_options(
                 "crime_api": crime_rate is not None,
                 "crime_api_source": crime_source,
                 "youtube_video": bool(youtube_video_ids),
+                "google_reviews": bool(google_reviews),
                 "commute_minutes": commute_minutes,
                 "viirs_night_activity": night_activity_source == "local_viirs",
                 "night_activity_source": night_activity_source,
@@ -242,40 +253,47 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
 
     # 2. Get metrics to find the raw cached comments
     metrics = crud.get_metrics(db, community_id)
-    if not metrics or not metrics.youtube_comments:
-        # If no metrics or no comments cached, we can't do much.
-        # The main ingestion pipeline (ensure_metrics_fresh) is responsible for fetching.
-        # We could trigger it here, but typically /communities/{id} is called before /reviews
+    if not metrics:
         return
 
     # 3. Parse cached comments and insert into ReviewPost table
-    try:
-        raw_comments = json.loads(metrics.youtube_comments)
-    except json.JSONDecodeError:
-        return
+    # Process YouTube comments
+    if metrics.youtube_comments:
+        try:
+            raw_yt_comments = json.loads(metrics.youtube_comments)
+            if raw_yt_comments:
+                yt_review_dicts = []
+                for text in raw_yt_comments:
+                    text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
+                    yt_review_dicts.append(
+                        {
+                            "id": f"yt-{text_hash}",
+                            "text": text,
+                            "published_at": None,
+                        }
+                    )
+                crud.upsert_review_posts(db, community_id, "youtube", yt_review_dicts)
+        except json.JSONDecodeError:
+            pass
 
-    if not raw_comments:
-        return
-
-    # Convert simple string comments to the dict format expected by upsert_review_posts
-    # Since we only stored strings, we'll generate IDs and dummy dates
-    review_dicts = []
-    for i, text in enumerate(raw_comments):
-        # Create a deterministic ID based on content hash or index to avoid dupes?
-        # For now, crud.upsert_review_posts uses external_id to dedup.
-        # We don't have real external IDs or dates stored in the simple list[str].
-        # We'll use a simple hash of the text as the ID.
-        text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
-
-        review_dicts.append(
-            {
-                "id": f"yt-{text_hash}",
-                "text": text,
-                "published_at": None,  # We lost the date in the simple fetch, that's fine for now
-            }
-        )
-
-    crud.upsert_review_posts(db, community_id, "youtube", review_dicts)
+    # Process Google Maps reviews
+    if hasattr(metrics, 'google_reviews') and metrics.google_reviews:
+        try:
+            raw_gm_reviews = json.loads(metrics.google_reviews)
+            if raw_gm_reviews:
+                gm_review_dicts = []
+                for text in raw_gm_reviews:
+                    text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
+                    gm_review_dicts.append(
+                        {
+                            "id": f"gm-{text_hash}",
+                            "text": text,
+                            "published_at": None,
+                        }
+                    )
+                crud.upsert_review_posts(db, community_id, "google_maps", gm_review_dicts)
+        except json.JSONDecodeError:
+            pass
 
 
 def _to_float(value: str | None) -> float | None:
