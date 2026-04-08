@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APITimeoutError
 
 from app.core.config import Settings
 from app.schemas.chat import ChatMessage, ChatResponse, PreferenceWeights
@@ -41,7 +41,7 @@ _DEFAULT_WEIGHTS = PreferenceWeights(
 async def get_chat_response(
     messages: list[ChatMessage], settings: Settings
 ) -> ChatResponse:
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=30.0)
 
     # Cap history to avoid runaway token usage
     trimmed = messages[-_MAX_HISTORY:]
@@ -76,6 +76,12 @@ async def get_chat_response(
             ready_to_recommend=bool(data.get("ready_to_recommend", False)),
         )
 
+    except APITimeoutError:
+        return ChatResponse(
+            reply="The AI took too long to respond. Please try again.",
+            weights=_DEFAULT_WEIGHTS,
+            ready_to_recommend=False,
+        )
     except (json.JSONDecodeError, KeyError, IndexError):
         # Return the raw text as a reply with default weights if parsing fails
         reply_text = raw if raw else "Sorry, I had trouble processing that. Could you try again?"
