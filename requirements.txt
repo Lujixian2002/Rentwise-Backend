@@ -6,3 +6,4 @@ pydantic-settings==2.7.0
 python-dotenv==1.0.1
 psycopg2-binary==2.9.10
 tifffile==2025.2.18
+openai>=1.0.0
