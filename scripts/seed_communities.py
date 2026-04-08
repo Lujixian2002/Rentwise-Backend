@@ -52,6 +52,46 @@ SEED_ROWS = [
         "center_lat": 33.6412,
         "center_lng": -117.9184,
     },
+    {
+        "community_id": "portola-springs",
+        "name": "Portola Springs",
+        "city": "Irvine",
+        "state": "CA",
+        "center_lat": 33.6974,
+        "center_lng": -117.7156,
+    },
+    {
+        "community_id": "great-park",
+        "name": "Great Park",
+        "city": "Irvine",
+        "state": "CA",
+        "center_lat": 33.6673,
+        "center_lng": -117.7243,
+    },
+    {
+        "community_id": "quail-hill",
+        "name": "Quail Hill",
+        "city": "Irvine",
+        "state": "CA",
+        "center_lat": 33.6495,
+        "center_lng": -117.7750,
+    },
+    {
+        "community_id": "oak-creek",
+        "name": "Oak Creek",
+        "city": "Irvine",
+        "state": "CA",
+        "center_lat": 33.6719,
+        "center_lng": -117.7754,
+    },
+    {
+        "community_id": "woodbury",
+        "name": "Woodbury",
+        "city": "Irvine",
+        "state": "CA",
+        "center_lat": 33.6973,
+        "center_lng": -117.7505,
+    },
 ]
 
 
