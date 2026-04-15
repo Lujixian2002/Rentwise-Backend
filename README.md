@@ -11,17 +11,21 @@ FastAPI service that powers the RentWise neighborhood comparison tool.
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/communities` | List all cached communities + metrics |
 | `GET` | `/` | Service status |
 | `GET` | `/health` | Health check |
 | `GET` | `/communities/{community_id}` | Community profile + cached metrics |
 | `GET` | `/communities/{community_id}/reviews` | YouTube + Google Maps reviews |
+| `POST` | `/communities/{community_id}/insight` | LLM-generated 5-dimension commentary + tradeoff |
 | `POST` | `/compare` | Compare two communities (optionally with custom weights) |
 | `POST` | `/chat` | LLM chat that extracts preference weights |
+| `POST` | `/recommend` | Rank communities using LLM-derived preference weights |
 
 Examples:
 
 ```bash
 curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/communities
 curl http://127.0.0.1:8000/communities/irvine-spectrum
 ```
 
@@ -39,6 +43,29 @@ curl -X POST http://127.0.0.1:8000/compare \
 curl -X POST http://127.0.0.1:8000/chat \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"I care about safety and parking"}]}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/communities/woodbridge/insight \
+  -H "Content-Type: application/json" \
+  -d '{
+    "max_reviews": 20
+  }'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/recommend \
+  -H "Content-Type: application/json" \
+  -d '{
+    "weights": {
+      "safety": 35,
+      "transit": 20,
+      "convenience": 15,
+      "parking": 20,
+      "environment": 10
+    },
+    "top_k": 3
+  }'
 ```
 
 Interactive docs: `http://127.0.0.1:8000/docs`

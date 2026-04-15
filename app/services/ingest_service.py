@@ -18,11 +18,6 @@ from app.services.fetchers.overpass_osm import (
     fetch_grocery_density,
     fetch_noise_proxy,
 )
-from app.services.fetchers.google_maps_reviews import (
-    fetch_place_reviews,
-    search_places,
-    search_places_nearby,
-)
 from app.services.fetchers.youtube import fetch_comments, search_videos
 from app.services.fetchers.zillow_zori import read_zori_rows
 from app.services.scoring_service import compute_dimension_scores
@@ -160,47 +155,6 @@ def ensure_metrics_fresh_with_options(
             if comments:
                 youtube_comments.extend(comments)
 
-    # ── Google Maps reviews ─────────────────────────────────────────────────
-    google_maps_place_ids: list[str] = []
-    google_maps_reviews: list[dict] = []
-
-    # Reuse cached place IDs to avoid repeated search API calls
-    if existing and existing.google_maps_place_ids:
-        try:
-            google_maps_place_ids = json.loads(existing.google_maps_place_ids)
-        except json.JSONDecodeError:
-            google_maps_place_ids = []
-
-    if not google_maps_place_ids and not skip_external:
-        found_ids_set: set[str] = set()
-
-        # Text search with different queries
-        search_queries = [
-            f"{community.name} {community.city or 'Irvine'} apartments",
-            f"{community.name} {community.city or 'Irvine'} neighborhood",
-            f"{community.name} {community.city or 'Irvine'} community",
-        ]
-        for q in search_queries:
-            ids = search_places(q, max_results=3)
-            found_ids_set.update(ids)
-
-        # Also search nearby if we have coordinates
-        if community.center_lat is not None and community.center_lng is not None:
-            nearby_ids = search_places_nearby(
-                community.center_lat, community.center_lng,
-                radius_m=2000, max_results=3,
-            )
-            found_ids_set.update(nearby_ids)
-
-        google_maps_place_ids = list(found_ids_set)
-
-    # Fetch reviews for each place (Google returns up to 5 per place)
-    if google_maps_place_ids and not skip_external:
-        for pid in google_maps_place_ids:
-            reviews = fetch_place_reviews(pid)
-            if reviews:
-                google_maps_reviews.extend(reviews)
-
     payload: dict = {
         "updated_at": datetime.utcnow(),
         "grocery_density_per_km2": grocery_density,
@@ -210,12 +164,6 @@ def ensure_metrics_fresh_with_options(
             json.dumps(youtube_video_ids) if youtube_video_ids else None
         ),
         "youtube_comments": json.dumps(youtube_comments) if youtube_comments else None,
-        "google_maps_place_ids": (
-            json.dumps(google_maps_place_ids) if google_maps_place_ids else None
-        ),
-        "google_maps_reviews": (
-            json.dumps(google_maps_reviews) if google_maps_reviews else None
-        ),
         "night_activity_index": night_activity_index,
         "noise_avg_db": noise_avg_db,
         "noise_p90_db": noise_p90_db,
@@ -256,7 +204,6 @@ def ensure_metrics_fresh_with_options(
                 "crime_api": crime_rate is not None,
                 "crime_api_source": crime_source,
                 "youtube_video": bool(youtube_video_ids),
-                "google_maps_reviews": bool(google_maps_place_ids),
                 "commute_minutes": commute_minutes,
                 "viirs_night_activity": night_activity_source == "local_viirs",
                 "night_activity_source": night_activity_source,
@@ -340,31 +287,6 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
             )
 
     crud.upsert_review_posts(db, community_id, "youtube", review_dicts)
-
-    # ── Google Maps reviews ───────────────────────────────────────────────
-    if metrics.google_maps_reviews:
-        try:
-            raw_gmap_reviews = json.loads(metrics.google_maps_reviews)
-        except json.JSONDecodeError:
-            raw_gmap_reviews = []
-
-        if raw_gmap_reviews:
-            gmap_review_dicts = []
-            for item in raw_gmap_reviews:
-                if isinstance(item, dict) and item.get("text"):
-                    gmap_review_dicts.append(
-                        {
-                            "id": item.get("id"),
-                            "text": item.get("text"),
-                            "published_at": item.get("published_at"),
-                            "author_name": item.get("author"),
-                            "like_count": item.get("like_count", 0),
-                            "parent_id": item.get("parent_id"),
-                        }
-                    )
-            if gmap_review_dicts:
-                crud.upsert_review_posts(db, community_id, "google_maps", gmap_review_dicts)
-
 
 def _to_float(value: str | None) -> float | None:
     if value in (None, ""):

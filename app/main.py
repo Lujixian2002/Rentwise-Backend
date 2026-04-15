@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import chat, communities, compare, health
+from app.api.routes import chat, communities, compare, health, recommend
 from app.core.logging import configure_logging
 
 configure_logging()
@@ -26,6 +26,7 @@ app.include_router(health.router)
 app.include_router(communities.router, prefix="/communities", tags=["communities"])
 app.include_router(compare.router, prefix="/compare", tags=["compare"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(recommend.router, prefix="/recommend", tags=["recommend"])
 
 
 @app.get("/")

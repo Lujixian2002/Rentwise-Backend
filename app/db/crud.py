@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.db.models import (
     Community,
@@ -18,6 +18,46 @@ from app.db.models import (
 def get_community(db: Session, community_id: str) -> Community | None:
     stmt = select(Community).where(Community.community_id == community_id)
     return db.execute(stmt).scalar_one_or_none()
+
+
+def list_communities_with_metrics(
+    db: Session,
+) -> list[tuple[Community, CommunityMetrics | None]]:
+    stmt = (
+        select(Community, CommunityMetrics)
+        .outerjoin(
+            CommunityMetrics, CommunityMetrics.community_id == Community.community_id
+        )
+        .options(
+            load_only(
+                Community.community_id,
+                Community.name,
+                Community.city,
+                Community.state,
+                Community.center_lat,
+                Community.center_lng,
+                Community.updated_at,
+            ),
+            load_only(
+                CommunityMetrics.community_id,
+                CommunityMetrics.median_rent,
+                CommunityMetrics.rent_2b2b,
+                CommunityMetrics.rent_1b1b,
+                CommunityMetrics.avg_sqft,
+                CommunityMetrics.grocery_density_per_km2,
+                CommunityMetrics.crime_rate_per_100k,
+                CommunityMetrics.rent_trend_12m_pct,
+                CommunityMetrics.night_activity_index,
+                CommunityMetrics.noise_avg_db,
+                CommunityMetrics.noise_p90_db,
+                CommunityMetrics.overall_confidence,
+                CommunityMetrics.details_json,
+                CommunityMetrics.updated_at,
+            ),
+        )
+        .order_by(Community.name.asc())
+    )
+    return list(db.execute(stmt).all())
 
 
 def get_community_by_name(db: Session, name: str) -> Community | None:

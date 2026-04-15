@@ -3,7 +3,12 @@ import json
 from sqlalchemy.orm import Session
 
 from app.db import crud
-from app.services.scoring_service import compute_dimension_scores
+from app.services.scoring_service import (
+    compute_dimension_scores,
+    compute_preference_scores,
+    compute_weighted_preference_score,
+    normalize_preference_weights,
+)
 
 
 def compare_communities(
@@ -13,6 +18,7 @@ def compare_communities(
     weights: dict[str, float] | None = None,
 ):
     weights = weights or {}
+    normalized_weights = normalize_preference_weights(weights) if weights else {}
 
     metrics_a = crud.get_metrics(db, community_a_id)
     metrics_b = crud.get_metrics(db, community_b_id)
@@ -29,7 +35,7 @@ def compare_communities(
             community_a_id=community_a_id,
             community_b_id=community_b_id,
             request_params={"weights": weights},
-            weights_used=weights,
+            weights_used=normalized_weights,
             structured_diff={},
             short_summary="Comparison incomplete due to missing metrics",
             tradeoffs={},
@@ -40,7 +46,7 @@ def compare_communities(
 
     dict_a = {
         "median_rent": metrics_a.median_rent,
-        "commute_minutes": None,
+        "commute_minutes": _extract_commute_minutes(metrics_a.details_json),
         "grocery_density_per_km2": metrics_a.grocery_density_per_km2,
         "crime_rate_per_100k": metrics_a.crime_rate_per_100k,
         "rent_trend_12m_pct": metrics_a.rent_trend_12m_pct,
@@ -50,7 +56,7 @@ def compare_communities(
     }
     dict_b = {
         "median_rent": metrics_b.median_rent,
-        "commute_minutes": None,
+        "commute_minutes": _extract_commute_minutes(metrics_b.details_json),
         "grocery_density_per_km2": metrics_b.grocery_density_per_km2,
         "crime_rate_per_100k": metrics_b.crime_rate_per_100k,
         "rent_trend_12m_pct": metrics_b.rent_trend_12m_pct,
@@ -62,6 +68,21 @@ def compare_communities(
     score_a = compute_dimension_scores(dict_a)
     score_b = compute_dimension_scores(dict_b)
 
+    if normalized_weights:
+        preference_score_a = compute_preference_scores(dict_a)
+        preference_score_b = compute_preference_scores(dict_b)
+        _, a_total = compute_weighted_preference_score(
+            preference_score_a,
+            normalized_weights,
+        )
+        _, b_total = compute_weighted_preference_score(
+            preference_score_b,
+            normalized_weights,
+        )
+    else:
+        a_total = sum(score_a.values())
+        b_total = sum(score_b.values())
+
     structured_diff = {}
     for dim in sorted(score_a.keys()):
         structured_diff[dim] = {
@@ -71,8 +92,6 @@ def compare_communities(
             "delta": round(score_a[dim] - score_b[dim], 2),
         }
 
-    a_total = sum(score_a.values())
-    b_total = sum(score_b.values())
     short_summary = (
         f"{community_a_id} leads overall" if a_total >= b_total else f"{community_b_id} leads overall"
     )
@@ -87,7 +106,7 @@ def compare_communities(
         community_a_id=community_a_id,
         community_b_id=community_b_id,
         request_params={"weights": weights},
-        weights_used=weights,
+        weights_used=normalized_weights,
         structured_diff=structured_diff,
         short_summary=short_summary,
         tradeoffs=tradeoffs,
@@ -103,3 +122,14 @@ def parse_json(text: str | None, default):
         return json.loads(text)
     except (TypeError, json.JSONDecodeError):
         return default
+
+
+def _extract_commute_minutes(details_json: str | None) -> float | None:
+    payload = parse_json(details_json, {})
+    value = payload.get("sources", {}).get("commute_minutes")
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
