@@ -34,7 +34,7 @@ def compute_dimension_scores(metrics: dict[str, float | None]) -> dict[str, floa
 
     cost_score = clamp_score(100 - ((median_rent or 2500) / 50))
     transit_score = clamp_score(100 - ((commute_minutes or 30) * 2.0))
-    convenience_score = clamp_score((grocery_density or 8) * 6.5)
+    convenience_score = clamp_score(40 + (grocery_density or 4) * 7.0)
     safety_score = clamp_score(100 - ((crime or 300) / 5))
     trend_score = clamp_score(100 - abs((rent_trend or 3.0) * 8))
     noise_score = clamp_score(100 - ((noise or 55) * 1.5))
@@ -101,11 +101,11 @@ def compute_preference_scores(
 
     safety_score = clamp_score(100 - ((crime or 300) / 5))
     transit_score = clamp_score(100 - ((commute_minutes or 30) * 2.0))
-    convenience_score = clamp_score((grocery_density or 8) * 6.5)
+    convenience_score = clamp_score(40 + (grocery_density or 4) * 7.0)
 
     # Parking has no first-class data source yet, so we use a proxy:
     # lower density, lower night activity, and quieter streets tend to imply easier parking.
-    parking_density_score = clamp_score(100 - ((grocery_density or 8) * 6.5))
+    parking_density_score = clamp_score(90 - (grocery_density or 4) * 7.0)
     parking_noise_score = clamp_score(100 - ((noise or 55) * 1.0))
     parking_night_score = clamp_score(100 - ((night or 50) * 1.0))
     parking_score = (
