@@ -64,9 +64,6 @@ async def get_community_insight(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> CommunityInsightResponse:
-    if not settings.openai_api_key:
-        raise HTTPException(status_code=503, detail="OpenAI API key not configured")
-
     insight = await generate_community_insight(
         db=db,
         community_id=community_id,

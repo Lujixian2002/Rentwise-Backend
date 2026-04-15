@@ -117,6 +117,15 @@ async def _generate_insight_copy(
     metrics,
     review_snippets: list[str],
 ) -> dict:
+    if not settings.openai_api_key:
+        return {
+            "overall_commentary": _fallback_overall_commentary(dimension_scores),
+            "dimensions": {
+                dimension: _fallback_dimension_comment(dimension, score)
+                for dimension, score in dimension_scores.items()
+            },
+        }
+
     client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=30.0)
     metrics_context = {
         "median_rent": getattr(metrics, "median_rent", None),
