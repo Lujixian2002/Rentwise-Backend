@@ -6,6 +6,7 @@ from openai import AsyncOpenAI, APITimeoutError
 
 from app.core.config import Settings
 from app.schemas.chat import ChatMessage, ChatResponse, PreferenceWeights
+from app.services.scoring_service import normalize_preference_weights_to_ints
 
 _SYSTEM_PROMPT = """You are a neighborhood recommendation assistant for the Irvine, CA area.
 Your job is to have a friendly, concise conversation to understand what the user values when \
@@ -61,7 +62,7 @@ async def get_chat_response(
         raw = completion.choices[0].message.content or ""
         data = json.loads(raw)
 
-        weights_data = data.get("weights", {})
+        weights_data = normalize_preference_weights_to_ints(data.get("weights", {}))
         weights = PreferenceWeights(
             safety=weights_data.get("safety"),
             transit=weights_data.get("transit"),

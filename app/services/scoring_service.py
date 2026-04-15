@@ -90,6 +90,31 @@ def normalize_preference_weights(
     return scaled
 
 
+def normalize_preference_weights_to_ints(
+    weights: Mapping[str, float | None] | None,
+) -> dict[str, int]:
+    normalized = normalize_preference_weights(weights)
+    integer_weights = {
+        dimension: int(normalized[dimension]) for dimension in PREFERENCE_DIMENSIONS
+    }
+
+    remainder = 100 - sum(integer_weights.values())
+    ranked_dimensions = sorted(
+        PREFERENCE_DIMENSIONS,
+        key=lambda dimension: (
+            normalized[dimension] - integer_weights[dimension],
+            normalized[dimension],
+        ),
+        reverse=True,
+    )
+
+    for index in range(remainder):
+        dimension = ranked_dimensions[index % len(ranked_dimensions)]
+        integer_weights[dimension] += 1
+
+    return integer_weights
+
+
 def compute_preference_scores(
     metrics: Mapping[str, float | None],
 ) -> dict[str, float]:
