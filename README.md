@@ -78,15 +78,15 @@ python -m scripts.fetch_irvine_sample   # creates tables, seeds, fetches sample 
 uvicorn app.main:app --reload --port 8000
 ```
 
-Database defaults to local SQLite (`rentwise.db`). To use Postgres, set `DATABASE_URL` in `.env`. The project root ships a `start.sh` that boots a `my-postgres` Docker container along with the backend and frontend.
+Database is configured through `DATABASE_URL` in `.env`. The project root ships a `start.sh` that boots a `my-postgres` Docker container along with the backend and frontend.
 
 ## Configuration
 
-Create a `.env` file in this directory. All keys except `DATABASE_URL` are optional — missing keys cause the corresponding fetcher to return `None` gracefully.
+Create a `.env` file in this directory. `DATABASE_URL` is required. The remaining keys are optional — missing keys cause the corresponding fetcher to return `None` gracefully.
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | SQLAlchemy URL; defaults to `sqlite:///./rentwise.db` |
+| `DATABASE_URL` | Required SQLAlchemy URL for the application database |
 | `APP_ENV` | Environment label |
 | `METRICS_TTL_HOURS` | Cache TTL for community metrics |
 | `OPENAI_API_KEY` | Enables `POST /chat` (gpt-4o-mini) |
