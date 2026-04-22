@@ -16,8 +16,8 @@ FastAPI service that powers the RentWise neighborhood comparison tool.
 | `GET` | `/health` | Health check |
 | `GET` | `/communities/{community_id}` | Community profile + cached metrics |
 | `GET` | `/communities/{community_id}/reviews` | YouTube + Google Maps reviews |
-| `POST` | `/communities/{community_id}/insight` | LLM-generated 5-dimension commentary + tradeoff |
-| `POST` | `/compare` | Compare two communities (optionally with custom weights) |
+| `POST` | `/communities/{community_id}/insight` | LLM-generated 5-dimension commentary + optional web-grounded community info |
+| `POST` | `/compare` | Compare two communities with rule-based scoring plus LLM-generated summary/tradeoffs |
 | `POST` | `/chat` | LLM chat that extracts preference weights |
 | `POST` | `/recommend` | Rank communities using LLM-derived preference weights |
 
@@ -49,7 +49,8 @@ curl -X POST http://127.0.0.1:8000/chat \
 curl -X POST http://127.0.0.1:8000/communities/woodbridge/insight \
   -H "Content-Type: application/json" \
   -d '{
-    "max_reviews": 20
+    "max_reviews": 20,
+    "include_web_info": true
   }'
 ```
 
@@ -89,7 +90,9 @@ Create a `.env` file in this directory. `DATABASE_URL` is required. The remainin
 | `DATABASE_URL` | Required SQLAlchemy URL for the application database |
 | `APP_ENV` | Environment label |
 | `METRICS_TTL_HOURS` | Cache TTL for community metrics |
-| `OPENAI_API_KEY` | Enables `POST /chat` (gpt-4o-mini) |
+| `OPENAI_API_KEY` | Enables LLM-powered endpoints including `/chat`, `/compare`, and `/communities/{community_id}/insight` |
+| `OPENAI_WEB_SEARCH_MODEL` | Optional model override for the web-search portion of `/communities/{community_id}/insight` |
+| `OPENAI_WEB_SEARCH_TIMEOUT_SEC` | Timeout for the web-search portion of `/communities/{community_id}/insight` |
 | `GOOGLE_MAPS_API_KEY` | Commute times + place reviews |
 | `OPENROUTESERVICE_API_KEY` | Commute fallback |
 | `YOUTUBE_API_KEY` | YouTube comment ingestion |

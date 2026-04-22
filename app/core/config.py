@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     reddit_client_secret: str | None = None
 
     openai_api_key: str | None = None
+    openai_web_search_model: str = "gpt-4o-mini"
+    openai_web_search_timeout_sec: float = 45.0
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),

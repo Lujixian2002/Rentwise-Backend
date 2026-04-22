@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.config import Settings, get_settings
 from app.schemas.comparison import CompareRequest, CompareResponse
 from app.services.compare_service import compare_communities
 from app.services.community_resolver import resolve_community
@@ -11,7 +12,11 @@ router = APIRouter()
 
 
 @router.post("", response_model=CompareResponse)
-def compare(req: CompareRequest, db: Session = Depends(get_db)) -> CompareResponse:
+async def compare(
+    req: CompareRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> CompareResponse:
     community_a = resolve_community(
         db, community_id=req.community_a_id, community_name=req.community_a_name
     )
@@ -30,10 +35,13 @@ def compare(req: CompareRequest, db: Session = Depends(get_db)) -> CompareRespon
     ensure_metrics_fresh(db, community_a.community_id)
     ensure_metrics_fresh(db, community_b.community_id)
 
-    row, structured_diff, tradeoffs = compare_communities(
+    row, structured_diff, tradeoffs = await compare_communities(
         db=db,
         community_a_id=community_a.community_id,
         community_b_id=community_b.community_id,
+        community_a_name=community_a.name,
+        community_b_name=community_b.name,
+        settings=settings,
         weights=req.weights,
     )
 

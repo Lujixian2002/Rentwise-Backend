@@ -69,6 +69,7 @@ async def get_community_insight(
         community_id=community_id,
         settings=settings,
         max_reviews=req.max_reviews,
+        include_web_info=req.include_web_info,
     )
     if insight is None:
         raise HTTPException(status_code=404, detail="Community not found")
