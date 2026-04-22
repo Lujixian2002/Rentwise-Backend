@@ -133,7 +133,8 @@ def _query_overpass(query: str) -> dict | None:
                 endpoint,
                 data=data,
                 headers={
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "User-Agent": "rentwise/1.0 (https://github.com/rentwise)",
                 },
                 method="POST",
             )

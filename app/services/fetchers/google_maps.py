@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import json
-import urllib.parse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.core.config import get_settings
 
-GOOGLE_DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json"
+GOOGLE_ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
+
+_TRAVEL_MODE_MAP = {
+    "driving": "DRIVE",
+    "walking": "WALK",
+    "bicycling": "BICYCLE",
+    "transit": "TRANSIT",
+}
 
 
 def fetch_commute_minutes(
@@ -22,37 +28,41 @@ def fetch_commute_minutes(
     if not settings.google_maps_api_key:
         return None
 
-    params = urllib.parse.urlencode(
-        {
-            "origins": f"{origin[0]},{origin[1]}",
-            "destinations": f"{destination[0]},{destination[1]}",
-            "mode": mode,
-            "units": "metric",
-            "key": settings.google_maps_api_key,
-        }
+    travel_mode = _TRAVEL_MODE_MAP.get(mode, "DRIVE")
+    body = {
+        "origin": {"location": {"latLng": {"latitude": origin[0], "longitude": origin[1]}}},
+        "destination": {
+            "location": {"latLng": {"latitude": destination[0], "longitude": destination[1]}}
+        },
+        "travelMode": travel_mode,
+    }
+    if travel_mode == "DRIVE":
+        body["routingPreference"] = "TRAFFIC_AWARE"
+
+    req = Request(
+        GOOGLE_ROUTES_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": settings.google_maps_api_key,
+            "X-Goog-FieldMask": "routes.duration",
+        },
+        method="POST",
     )
-    url = f"{GOOGLE_DISTANCE_MATRIX_URL}?{params}"
-    req = Request(url, headers={"Accept": "application/json"}, method="GET")
 
     try:
-        with urlopen(req, timeout=8) as resp:
+        with urlopen(req, timeout=10) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
         return None
 
-    rows = payload.get("rows") or []
-    if not rows:
+    routes = payload.get("routes") or []
+    if not routes:
         return None
-    elements = rows[0].get("elements") or []
-    if not elements:
+    duration = routes[0].get("duration")  # e.g. "1200s"
+    if not isinstance(duration, str) or not duration.endswith("s"):
         return None
-    element = elements[0]
-    if element.get("status") != "OK":
-        return None
-
-    duration = element.get("duration", {}) or {}
-    seconds = duration.get("value")
     try:
-        return int(round(float(seconds) / 60.0))
-    except (TypeError, ValueError):
+        return int(round(float(duration[:-1]) / 60.0))
+    except ValueError:
         return None
