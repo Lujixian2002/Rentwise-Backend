@@ -195,22 +195,31 @@ def create_comparison(
     data_origin: str = "mixed",
 ) -> CommunityComparison:
     now = datetime.utcnow()
-    row = CommunityComparison(
-        comparison_id=uuid4().hex,
-        community_a_id=community_a_id,
-        community_b_id=community_b_id,
-        created_at=now,
-        updated_at=now,
-        request_params_json=json.dumps(request_params, ensure_ascii=True),
-        weights_used_json=json.dumps(weights_used, ensure_ascii=True),
-        structured_diff_json=json.dumps(structured_diff, ensure_ascii=True),
-        short_summary=short_summary,
-        tradeoffs_json=json.dumps(tradeoffs, ensure_ascii=True),
-        status=status,
-        missing_fields_json=json.dumps(missing_fields or [], ensure_ascii=True),
-        data_origin=data_origin,
+    stmt = select(CommunityComparison).where(
+        CommunityComparison.community_a_id == community_a_id,
+        CommunityComparison.community_b_id == community_b_id,
     )
-    db.add(row)
+    row = db.execute(stmt).scalar_one_or_none()
+
+    if row is None:
+        row = CommunityComparison(
+            comparison_id=uuid4().hex,
+            community_a_id=community_a_id,
+            community_b_id=community_b_id,
+            created_at=now,
+        )
+        db.add(row)
+
+    row.updated_at = now
+    row.request_params_json = json.dumps(request_params, ensure_ascii=True)
+    row.weights_used_json = json.dumps(weights_used, ensure_ascii=True)
+    row.structured_diff_json = json.dumps(structured_diff, ensure_ascii=True)
+    row.short_summary = short_summary
+    row.tradeoffs_json = json.dumps(tradeoffs, ensure_ascii=True)
+    row.status = status
+    row.missing_fields_json = json.dumps(missing_fields or [], ensure_ascii=True)
+    row.data_origin = data_origin
+
     db.commit()
     db.refresh(row)
     return row

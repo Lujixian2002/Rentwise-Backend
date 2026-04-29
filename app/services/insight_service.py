@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 
 from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db import crud
-from app.schemas.insight import CommunityInsightResponse, DimensionCommentary
+from app.schemas.insight import (
+    CommunityInsightResponse,
+    CommunityWebInfo,
+    CommunityWebSource,
+    DimensionCommentary,
+)
 from app.services.ingest_service import ensure_metrics_fresh, ensure_reviews_fresh
 from app.services.scoring_service import (
     PREFERENCE_DIMENSIONS,
@@ -36,12 +42,44 @@ Rules:
 4. "overall_commentary" should summarize the neighborhood's overall character in 1-2 short sentences.
 5. For parking, use review evidence and proxy signals only; if evidence is limited, mention that."""
 
+_COMMUNITY_WEB_INFO_SYSTEM_PROMPT = """You generate concise neighborhood background cards.
+Use web search to gather basic public information about the named neighborhood or community.
+
+Return a valid JSON object with exactly this shape:
+{
+  "summary": "...",
+  "highlights": ["...", "...", "..."]
+}
+
+Rules:
+1. Search the web before answering.
+2. Focus on stable, renter-useful basics such as neighborhood character, major nearby destinations, parks, shopping areas, schools, development pattern, and where the area sits inside the city.
+3. Avoid exact home prices, market forecasts, rankings, rumors, and promotional language.
+4. If the place name is ambiguous, use the provided city and state to disambiguate it.
+5. "summary" should be 1-2 short sentences.
+6. "highlights" should contain 2-4 short sentences.
+7. If evidence is weak, say that briefly instead of overstating."""
+
+_COMMUNITY_WEB_INFO_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "highlights": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["summary", "highlights"],
+    "additionalProperties": False,
+}
+
 
 async def generate_community_insight(
     db: Session,
     community_id: str,
     settings: Settings,
     max_reviews: int = 20,
+    include_web_info: bool = True,
 ) -> CommunityInsightResponse | None:
     community = crud.get_community(db, community_id)
     if community is None:
@@ -85,6 +123,15 @@ async def generate_community_insight(
         review_snippets=review_snippets,
     )
 
+    community_web_info = None
+    if include_web_info:
+        community_web_info = await _generate_community_web_info(
+            settings=settings,
+            community_name=community.name,
+            city=community.city,
+            state=community.state,
+        )
+
     dimensions = [
         DimensionCommentary(
             dimension=dimension,
@@ -105,6 +152,7 @@ async def generate_community_insight(
         dimensions=dimensions,
         overall_commentary=generated_copy.get("overall_commentary")
         or _fallback_overall_commentary(dimension_scores),
+        community_web_info=community_web_info,
     )
 
 
@@ -185,6 +233,80 @@ async def _generate_insight_copy(
         }
 
 
+async def _generate_community_web_info(
+    settings: Settings,
+    community_name: str,
+    city: str | None,
+    state: str | None,
+) -> CommunityWebInfo | None:
+    if not settings.openai_api_key:
+        return None
+
+    client = AsyncOpenAI(
+        api_key=settings.openai_api_key,
+        timeout=settings.openai_web_search_timeout_sec,
+    )
+    if not hasattr(client, "responses"):
+        return None
+
+    search_tool = {"type": "web_search"}
+    user_location = _build_user_location(city, state)
+    if user_location:
+        search_tool["user_location"] = user_location
+
+    user_prompt = json.dumps(
+        {
+            "community": {
+                "name": community_name,
+                "city": city,
+                "state": state,
+            },
+            "task": "Search the web and summarize stable background information for this community.",
+        },
+        ensure_ascii=True,
+    )
+
+    try:
+        response = await client.responses.create(
+            model=settings.openai_web_search_model,
+            input=[
+                {"role": "system", "content": _COMMUNITY_WEB_INFO_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            tools=[search_tool],
+            tool_choice="auto",
+            include=["web_search_call.action.sources"],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "community_web_info",
+                    "strict": True,
+                    "schema": _COMMUNITY_WEB_INFO_SCHEMA,
+                }
+            },
+            max_output_tokens=500,
+        )
+        raw = _extract_response_text(response)
+        data = json.loads(raw)
+    except Exception:
+        return None
+
+    summary = _clean_sentence(data.get("summary"))
+    highlights = _clean_string_list(data.get("highlights"), limit=4)
+    if not summary:
+        return None
+
+    sources = _extract_web_sources(response)
+    if not sources:
+        return None
+
+    return CommunityWebInfo(
+        summary=summary,
+        highlights=highlights,
+        sources=sources,
+    )
+
+
 def _extract_commute_minutes(details_json: str | None) -> float | None:
     if not details_json:
         return None
@@ -243,6 +365,93 @@ def _extract_texts(raw_json: str | None) -> list[str]:
             if isinstance(text, str) and text.strip():
                 texts.append(text)
     return texts
+
+
+def _extract_response_text(response) -> str:
+    output_text = _obj_get(response, "output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    chunks: list[str] = []
+    for output_item in _obj_get(response, "output", []) or []:
+        if _obj_get(output_item, "type") != "message":
+            continue
+        for content_item in _obj_get(output_item, "content", []) or []:
+            text = _obj_get(content_item, "text")
+            if isinstance(text, str) and text.strip():
+                chunks.append(text.strip())
+    return "\n".join(chunks).strip()
+
+
+def _extract_web_sources(response, limit: int = 6) -> list[CommunityWebSource]:
+    titles_by_url = _extract_citation_titles(response)
+    seen: set[str] = set()
+    sources: list[CommunityWebSource] = []
+
+    for output_item in _obj_get(response, "output", []) or []:
+        if _obj_get(output_item, "type") != "web_search_call":
+            continue
+        action = _obj_get(output_item, "action", {})
+        for source in _obj_get(action, "sources", []) or []:
+            url = _obj_get(source, "url")
+            if not isinstance(url, str) or not url or url in seen:
+                continue
+            seen.add(url)
+            sources.append(
+                CommunityWebSource(
+                    url=url,
+                    domain=_extract_domain(url),
+                    title=titles_by_url.get(url),
+                )
+            )
+            if len(sources) >= limit:
+                return sources
+    return sources
+
+
+def _extract_citation_titles(response) -> dict[str, str]:
+    titles: dict[str, str] = {}
+
+    for output_item in _obj_get(response, "output", []) or []:
+        if _obj_get(output_item, "type") != "message":
+            continue
+        for content_item in _obj_get(output_item, "content", []) or []:
+            for annotation in _obj_get(content_item, "annotations", []) or []:
+                ann_type = _obj_get(annotation, "type")
+                if ann_type == "url_citation":
+                    url = _obj_get(annotation, "url")
+                    title = _obj_get(annotation, "title")
+                else:
+                    citation = _obj_get(annotation, "url_citation", {})
+                    url = _obj_get(citation, "url")
+                    title = _obj_get(citation, "title")
+                if isinstance(url, str) and url and isinstance(title, str) and title.strip():
+                    titles[url] = title.strip()
+
+    return titles
+
+
+def _build_user_location(city: str | None, state: str | None) -> dict | None:
+    if not city and not state:
+        return None
+
+    payload = {"type": "approximate", "country": "US"}
+    if city:
+        payload["city"] = city
+    if state:
+        payload["region"] = state
+    return payload
+
+
+def _extract_domain(url: str) -> str | None:
+    netloc = urlparse(url).netloc.strip().lower()
+    return netloc or None
+
+
+def _obj_get(obj, key: str, default=None):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
 
 
 def _fallback_overall_commentary(dimension_scores: dict[str, float]) -> str:
@@ -310,3 +519,18 @@ def _clean_sentence(value) -> str | None:
     if not text:
         return None
     return text
+
+
+def _clean_string_list(value, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    cleaned: list[str] = []
+    for item in value:
+        text = _clean_sentence(item)
+        if not text:
+            continue
+        cleaned.append(text)
+        if len(cleaned) >= limit:
+            break
+    return cleaned
