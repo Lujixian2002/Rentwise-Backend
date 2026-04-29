@@ -90,8 +90,7 @@ The `sql/` folder ships pre-exported snapshots so collaborators can boot a worki
 | File | Contents |
 |---|---|
 | `sql/1_create_tables.sql` | Schema (7 tables) |
-| `sql/2_insert_statements.sql` | Data only — 27 communities, metrics, dimension scores, review posts |
-| `sql/full_dump.sql` | Schema + data bundled (recommended for one-shot import) |
+| `sql/2_insert_statements.sql` | Data — 27 communities, metrics, dimension scores, review posts |
 
 Steps:
 
@@ -104,9 +103,10 @@ docker run -d --name rentwise-postgres \
   -p 5432:5432 \
   postgres:16
 
-# 2. One-shot import (schema + data)
-docker exec -i -e PGPASSWORD=ddbswdjx rentwise-postgres \
-  psql -U rentwise_user -d rentwise < sql/full_dump.sql
+# 2. Import schema then data (chained on stdin so it's one command)
+cat sql/1_create_tables.sql sql/2_insert_statements.sql | \
+  docker exec -i -e PGPASSWORD=ddbswdjx rentwise-postgres \
+  psql -U rentwise_user -d rentwise
 
 # 3. Verify
 docker exec -e PGPASSWORD=ddbswdjx rentwise-postgres \
@@ -118,11 +118,10 @@ echo 'DATABASE_URL=postgresql://rentwise_user:ddbswdjx@localhost:5432/rentwise' 
 uvicorn app.main:app --reload --port 8000
 ```
 
-To regenerate the dumps after running fetchers locally:
+To regenerate `sql/2_insert_statements.sql` after running fetchers locally:
 
 ```bash
-PYTHONPATH=. python sql/export_share_sql.py                          # data only
-PYTHONPATH=. python sql/export_share_sql.py --include-schema --output sql/full_dump.sql  # bundle
+PYTHONPATH=. python sql/export_share_sql.py
 ```
 
 ## Configuration
