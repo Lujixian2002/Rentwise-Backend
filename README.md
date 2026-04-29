@@ -78,7 +78,51 @@ python -m scripts.fetch_irvine_sample   # creates tables, seeds, fetches sample 
 uvicorn app.main:app --reload --port 8000
 ```
 
-Database is configured through `DATABASE_URL` in `.env`. The project root ships a `start.sh` that boots a `my-postgres` Docker container along with the backend and frontend.
+Database is configured through `DATABASE_URL` in `.env` (or `.env.local`, which takes precedence and is gitignored — use it for personal API keys).
+
+> **Note**: `fetch_irvine_sample` calls live external APIs (OSM Overpass, Google Maps, YouTube, ZORI CSV, VIIRS raster) and takes ~5–10 minutes. It also needs assets in `data/` (Zillow ZORI CSV, VIIRS night-lights tile) and the corresponding API keys to fully populate metrics. If you just want to spin up the project against the same dataset the maintainer is using, use the SQL dump path below instead.
+
+## Reproducing the seeded dataset (fast path)
+
+The `sql/` folder ships pre-exported snapshots so collaborators can boot a working DB in seconds without running any fetchers:
+
+| File | Contents |
+|---|---|
+| `sql/1_create_tables.sql` | Schema (7 tables) |
+| `sql/2_insert_statements.sql` | Data only — 27 communities, metrics, dimension scores, review posts |
+| `sql/full_dump.sql` | Schema + data bundled (recommended for one-shot import) |
+
+Steps:
+
+```bash
+# 1. Start a Postgres container that matches the expected DATABASE_URL
+docker run -d --name rentwise-postgres \
+  -e POSTGRES_DB=rentwise \
+  -e POSTGRES_USER=rentwise_user \
+  -e POSTGRES_PASSWORD=ddbswdjx \
+  -p 5432:5432 \
+  postgres:16
+
+# 2. One-shot import (schema + data)
+docker exec -i -e PGPASSWORD=ddbswdjx rentwise-postgres \
+  psql -U rentwise_user -d rentwise < sql/full_dump.sql
+
+# 3. Verify
+docker exec -e PGPASSWORD=ddbswdjx rentwise-postgres \
+  psql -U rentwise_user -d rentwise -c "SELECT COUNT(*) FROM community;"
+# → expect 27
+
+# 4. Boot the backend against the imported DB
+echo 'DATABASE_URL=postgresql://rentwise_user:ddbswdjx@localhost:5432/rentwise' >> .env.local
+uvicorn app.main:app --reload --port 8000
+```
+
+To regenerate the dumps after running fetchers locally:
+
+```bash
+PYTHONPATH=. python sql/export_share_sql.py                          # data only
+PYTHONPATH=. python sql/export_share_sql.py --include-schema --output sql/full_dump.sql  # bundle
+```
 
 ## Configuration
 

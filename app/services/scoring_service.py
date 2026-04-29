@@ -22,24 +22,29 @@ def clamp_score(value: float, low: float = 0.0, high: float = 100.0) -> float:
     return max(low, min(high, value))
 
 
-def compute_dimension_scores(metrics: dict[str, float | None]) -> dict[str, float]:
-    median_rent = metrics.get("median_rent")
-    commute_minutes = metrics.get("commute_minutes")
-    grocery_density = metrics.get("grocery_density_per_km2")
-    crime = metrics.get("crime_rate_per_100k")
-    rent_trend = metrics.get("rent_trend_12m_pct")
-    noise = metrics.get("noise_avg_db")
-    night = metrics.get("night_activity_index")
-    review_score = metrics.get("review_signal_score")
+def _coalesce(value: float | None, default: float) -> float:
+    """Return the value if not None — preserves legitimate zero readings."""
+    return default if value is None else value
 
-    cost_score = clamp_score(100 - ((median_rent or 2500) / 50))
-    transit_score = clamp_score(100 - ((commute_minutes or 30) * 2.0))
-    convenience_score = clamp_score(40 + (grocery_density or 4) * 7.0)
-    safety_score = clamp_score(100 - ((crime or 300) / 5))
-    trend_score = clamp_score(100 - abs((rent_trend or 3.0) * 8))
-    noise_score = clamp_score(100 - ((noise or 55) * 1.5))
-    nightlife_score = clamp_score((night or 50) * 1.2)
-    reviews_score = clamp_score(review_score or 60)
+
+def compute_dimension_scores(metrics: dict[str, float | None]) -> dict[str, float]:
+    median_rent = _coalesce(metrics.get("median_rent"), 2500)
+    commute_minutes = _coalesce(metrics.get("commute_minutes"), 30)
+    grocery_density = _coalesce(metrics.get("grocery_density_per_km2"), 4)
+    crime = _coalesce(metrics.get("crime_rate_per_100k"), 300)
+    rent_trend = _coalesce(metrics.get("rent_trend_12m_pct"), 3.0)
+    noise = _coalesce(metrics.get("noise_avg_db"), 55)
+    night = _coalesce(metrics.get("night_activity_index"), 50)
+    review_score = _coalesce(metrics.get("review_signal_score"), 60)
+
+    cost_score = clamp_score(100 - (median_rent / 50))
+    transit_score = clamp_score(100 - (commute_minutes * 2.0))
+    convenience_score = clamp_score(40 + grocery_density * 7.0)
+    safety_score = clamp_score(100 - (crime / 5))
+    trend_score = clamp_score(100 - abs(rent_trend * 8))
+    noise_score = clamp_score(100 - (noise * 1.5))
+    nightlife_score = clamp_score(night * 1.2)
+    reviews_score = clamp_score(review_score)
 
     return {
         "Cost": round(cost_score, 2),
@@ -118,29 +123,29 @@ def normalize_preference_weights_to_ints(
 def compute_preference_scores(
     metrics: Mapping[str, float | None],
 ) -> dict[str, float]:
-    crime = metrics.get("crime_rate_per_100k")
-    commute_minutes = metrics.get("commute_minutes")
-    grocery_density = metrics.get("grocery_density_per_km2")
-    noise = metrics.get("noise_avg_db")
-    night = metrics.get("night_activity_index")
+    crime = _coalesce(metrics.get("crime_rate_per_100k"), 300)
+    commute_minutes = _coalesce(metrics.get("commute_minutes"), 30)
+    grocery_density = _coalesce(metrics.get("grocery_density_per_km2"), 4)
+    noise = _coalesce(metrics.get("noise_avg_db"), 55)
+    night = _coalesce(metrics.get("night_activity_index"), 50)
 
-    safety_score = clamp_score(100 - ((crime or 300) / 5))
-    transit_score = clamp_score(100 - ((commute_minutes or 30) * 2.0))
-    convenience_score = clamp_score(40 + (grocery_density or 4) * 7.0)
+    safety_score = clamp_score(100 - (crime / 5))
+    transit_score = clamp_score(100 - (commute_minutes * 2.0))
+    convenience_score = clamp_score(40 + grocery_density * 7.0)
 
     # Parking has no first-class data source yet, so we use a proxy:
     # lower density, lower night activity, and quieter streets tend to imply easier parking.
-    parking_density_score = clamp_score(90 - (grocery_density or 4) * 7.0)
-    parking_noise_score = clamp_score(100 - ((noise or 55) * 1.0))
-    parking_night_score = clamp_score(100 - ((night or 50) * 1.0))
+    parking_density_score = clamp_score(90 - grocery_density * 7.0)
+    parking_noise_score = clamp_score(100 - (noise * 1.0))
+    parking_night_score = clamp_score(100 - (night * 1.0))
     parking_score = (
         parking_density_score * 0.5
         + parking_noise_score * 0.25
         + parking_night_score * 0.25
     )
 
-    quiet_score = clamp_score(100 - ((noise or 55) * 1.5))
-    calm_night_score = clamp_score(100 - ((night or 50) * 1.2))
+    quiet_score = clamp_score(100 - (noise * 1.5))
+    calm_night_score = clamp_score(100 - (night * 1.2))
     environment_score = (quiet_score * 0.7) + (calm_night_score * 0.3)
 
     return {

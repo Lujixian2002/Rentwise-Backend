@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db import crud
 from app.services.fetchers.irvine_crime import fetch_crime_rate_per_100k_with_source
+from app.services.fetchers.local_crime import fetch_crime_rate_per_100k as fetch_local_crime_rate
 from app.services.fetchers.google_maps import (
     fetch_commute_minutes as fetch_google_commute_minutes,
 )
@@ -52,8 +53,12 @@ def ensure_metrics_fresh_with_options(
     if community is None:
         return
 
-    # ZORI (local CSV for rent baseline)
-    zori_rows = read_zori_rows()
+    # ZORI (local CSV for rent baseline) — look up current community's city.
+    zori_rows = read_zori_rows(
+        city=community.city or "Irvine",
+        state=community.state or "CA",
+        community_ids=[community_id],
+    )
     match = next(
         (row for row in zori_rows if row.get("community_id") == community_id), None
     )
@@ -103,14 +108,30 @@ def ensure_metrics_fresh_with_options(
     if noise_p90_db is None and existing and existing.noise_p90_db is not None:
         noise_p90_db = existing.noise_p90_db
 
+    # Keep grocery density stable: fallback to cached value when Overpass is flaky.
+    if (
+        grocery_density is None
+        and existing
+        and existing.grocery_density_per_km2 is not None
+    ):
+        grocery_density = existing.grocery_density_per_km2
+
     crime_rate = None
     crime_source = "skipped" if skip_external else "missing"
     if not skip_external:
+        # Try Crimeometer first (only when API key configured), then fall back
+        # to local UCR baseline + density-multiplier heuristic.
         crime_rate, crime_source = fetch_crime_rate_per_100k_with_source(
             community.city,
             center_lat=community.center_lat,
             center_lng=community.center_lng,
         )
+        if crime_rate is None:
+            crime_rate, crime_source = fetch_local_crime_rate(
+                community.city,
+                state=community.state,
+                grocery_density_per_km2=grocery_density,
+            )
 
     # YouTube fetching is enabled for testing when YOUTUBE_API_KEY is set.
     youtube_video_ids = []

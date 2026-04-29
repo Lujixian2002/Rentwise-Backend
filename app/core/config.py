@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     nasa_earthdata_token: str | None = None
     viirs_days_back: int = 30
     viirs_bbox_radius_km: float = 10.0
-    viirs_local_radiance_tif: str = "data/viirs_nightlights_2025-12_tile_00N060W/avg_radiance.tif"
+    viirs_local_radiance_tif: str = "data/viirs_nightlights_2025-12_tile_75N180W/avg_radiance.tif"
     viirs_sample_radius_km: float = 2.0
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None
