@@ -36,6 +36,10 @@ class CommunityMetrics(Base):
     night_activity_index: Mapped[float | None] = mapped_column(Float)
     noise_avg_db: Mapped[float | None] = mapped_column(Float)
     noise_p90_db: Mapped[float | None] = mapped_column(Float)
+    commute_minutes: Mapped[float | None] = mapped_column(Float)
+    parking_lot_density_per_km2: Mapped[float | None] = mapped_column(Float)
+    parking_capacity_per_km2: Mapped[float | None] = mapped_column(Float)
+    poi_demand_density_per_km2: Mapped[float | None] = mapped_column(Float)
 
     # Storing a list of video IDs as a JSON string
     youtube_video_ids: Mapped[str | None] = mapped_column(Text)
@@ -43,7 +47,6 @@ class CommunityMetrics(Base):
     youtube_comments: Mapped[str | None] = mapped_column(Text)
     
     overall_confidence: Mapped[float | None] = mapped_column(Float)
-    details_json: Mapped[str | None] = mapped_column(Text)
     details_json: Mapped[str | None] = mapped_column(Text)
 
 

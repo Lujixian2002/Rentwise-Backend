@@ -75,22 +75,28 @@ async def compare_communities(
 
     dict_a = {
         "median_rent": metrics_a.median_rent,
-        "commute_minutes": _extract_commute_minutes(metrics_a.details_json),
+        "commute_minutes": _metric_commute_minutes(metrics_a),
         "grocery_density_per_km2": metrics_a.grocery_density_per_km2,
         "crime_rate_per_100k": metrics_a.crime_rate_per_100k,
         "rent_trend_12m_pct": metrics_a.rent_trend_12m_pct,
         "noise_avg_db": metrics_a.noise_avg_db,
         "night_activity_index": metrics_a.night_activity_index,
+        "parking_lot_density_per_km2": metrics_a.parking_lot_density_per_km2,
+        "parking_capacity_per_km2": metrics_a.parking_capacity_per_km2,
+        "poi_demand_density_per_km2": metrics_a.poi_demand_density_per_km2,
         "review_signal_score": None,
     }
     dict_b = {
         "median_rent": metrics_b.median_rent,
-        "commute_minutes": _extract_commute_minutes(metrics_b.details_json),
+        "commute_minutes": _metric_commute_minutes(metrics_b),
         "grocery_density_per_km2": metrics_b.grocery_density_per_km2,
         "crime_rate_per_100k": metrics_b.crime_rate_per_100k,
         "rent_trend_12m_pct": metrics_b.rent_trend_12m_pct,
         "noise_avg_db": metrics_b.noise_avg_db,
         "night_activity_index": metrics_b.night_activity_index,
+        "parking_lot_density_per_km2": metrics_b.parking_lot_density_per_km2,
+        "parking_capacity_per_km2": metrics_b.parking_capacity_per_km2,
+        "poi_demand_density_per_km2": metrics_b.poi_demand_density_per_km2,
         "review_signal_score": None,
     }
 
@@ -307,6 +313,12 @@ def parse_json(text: str | None, default):
         return json.loads(text)
     except (TypeError, json.JSONDecodeError):
         return default
+
+
+def _metric_commute_minutes(metrics) -> float | None:
+    if metrics.commute_minutes is not None:
+        return metrics.commute_minutes
+    return _extract_commute_minutes(metrics.details_json)
 
 
 def _extract_commute_minutes(details_json: str | None) -> float | None:

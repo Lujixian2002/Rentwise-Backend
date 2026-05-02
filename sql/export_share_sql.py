@@ -82,7 +82,7 @@ def _export_table(conn, inspector, table: str) -> list[str]:
 
     for row in rows:
         values_sql = ", ".join(_to_sql_literal(row[col]) for col in columns)
-        lines.append(f"INSERT INTO {table} ({quoted_cols}) VALUES ({values_sql});")
+        lines.append(f"INSERT INTO {table} ({quoted_cols}) VALUES ({values_sql}) ON CONFLICT DO NOTHING;")
     return lines
 
 

@@ -93,14 +93,21 @@ async def generate_community_insight(
 
     score_input = {
         "crime_rate_per_100k": metrics.crime_rate_per_100k if metrics else None,
-        "commute_minutes": _extract_commute_minutes(
-            metrics.details_json if metrics else None
-        ),
+        "commute_minutes": _metric_commute_minutes(metrics),
         "grocery_density_per_km2": (
             metrics.grocery_density_per_km2 if metrics else None
         ),
         "noise_avg_db": metrics.noise_avg_db if metrics else None,
         "night_activity_index": metrics.night_activity_index if metrics else None,
+        "parking_lot_density_per_km2": (
+            metrics.parking_lot_density_per_km2 if metrics else None
+        ),
+        "parking_capacity_per_km2": (
+            metrics.parking_capacity_per_km2 if metrics else None
+        ),
+        "poi_demand_density_per_km2": (
+            metrics.poi_demand_density_per_km2 if metrics else None
+        ),
     }
     dimension_scores = compute_preference_scores(score_input)
 
@@ -181,10 +188,17 @@ async def _generate_insight_copy(
         "grocery_density_per_km2": getattr(metrics, "grocery_density_per_km2", None),
         "noise_avg_db": getattr(metrics, "noise_avg_db", None),
         "night_activity_index": getattr(metrics, "night_activity_index", None),
-        "overall_confidence": getattr(metrics, "overall_confidence", None),
-        "commute_minutes": _extract_commute_minutes(
-            getattr(metrics, "details_json", None)
+        "parking_lot_density_per_km2": getattr(
+            metrics, "parking_lot_density_per_km2", None
         ),
+        "parking_capacity_per_km2": getattr(
+            metrics, "parking_capacity_per_km2", None
+        ),
+        "poi_demand_density_per_km2": getattr(
+            metrics, "poi_demand_density_per_km2", None
+        ),
+        "overall_confidence": getattr(metrics, "overall_confidence", None),
+        "commute_minutes": _metric_commute_minutes(metrics),
     }
     user_prompt = json.dumps(
         {
@@ -305,6 +319,14 @@ async def _generate_community_web_info(
         highlights=highlights,
         sources=sources,
     )
+
+
+def _metric_commute_minutes(metrics) -> float | None:
+    if metrics is None:
+        return None
+    if metrics.commute_minutes is not None:
+        return metrics.commute_minutes
+    return _extract_commute_minutes(metrics.details_json)
 
 
 def _extract_commute_minutes(details_json: str | None) -> float | None:

@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -104,8 +106,32 @@ def _build_detail_response(
             night_activity_index=metrics.night_activity_index,
             noise_avg_db=metrics.noise_avg_db,
             noise_p90_db=metrics.noise_p90_db,
+            commute_minutes=_metric_commute_minutes(metrics),
+            parking_lot_density_per_km2=metrics.parking_lot_density_per_km2,
+            parking_capacity_per_km2=metrics.parking_capacity_per_km2,
+            poi_demand_density_per_km2=metrics.poi_demand_density_per_km2,
             overall_confidence=metrics.overall_confidence,
             updated_at=metrics.updated_at,
         )
 
     return CommunityDetailResponse(community=community_payload, metrics=metrics_payload)
+
+
+def _metric_commute_minutes(metrics) -> float | None:
+    if metrics.commute_minutes is not None:
+        return metrics.commute_minutes
+
+    if not metrics.details_json:
+        return None
+    try:
+        payload = json.loads(metrics.details_json)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+    value = payload.get("sources", {}).get("commute_minutes")
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None

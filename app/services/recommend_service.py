@@ -34,13 +34,16 @@ def recommend_communities(
             skipped_missing_metrics += 1
             continue
 
-        commute_minutes = _extract_commute_minutes(metrics.details_json)
+        commute_minutes = _metric_commute_minutes(metrics)
         score_input = {
             "crime_rate_per_100k": metrics.crime_rate_per_100k,
             "commute_minutes": commute_minutes,
             "grocery_density_per_km2": metrics.grocery_density_per_km2,
             "noise_avg_db": metrics.noise_avg_db,
             "night_activity_index": metrics.night_activity_index,
+            "parking_lot_density_per_km2": metrics.parking_lot_density_per_km2,
+            "parking_capacity_per_km2": metrics.parking_capacity_per_km2,
+            "poi_demand_density_per_km2": metrics.poi_demand_density_per_km2,
         }
         dimension_scores = compute_preference_scores(score_input)
         weighted_contributions, total_score = compute_weighted_preference_score(
@@ -90,6 +93,12 @@ def recommend_communities(
         skipped_missing_metrics=skipped_missing_metrics,
         ranked_communities=top_ranked,
     )
+
+
+def _metric_commute_minutes(metrics) -> float | None:
+    if metrics.commute_minutes is not None:
+        return metrics.commute_minutes
+    return _extract_commute_minutes(metrics.details_json)
 
 
 def _extract_commute_minutes(details_json: str | None) -> float | None:

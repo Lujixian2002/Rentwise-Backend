@@ -52,6 +52,72 @@ def fetch_grocery_density(
     return round(weighted_sum / area_km2, 3)
 
 
+def fetch_parking_metrics(
+    center_lat: float, center_lng: float, radius_km: float = 1.2
+) -> tuple[float | None, float | None, float | None]:
+    """
+    Returns parking supply and demand-pressure proxies:
+    - public/customer parking lots per km2
+    - mapped parking capacity per km2 when OSM capacity tags exist
+    - POI demand density per km2 for places that tend to compete for parking
+    """
+    radius_m = int(radius_km * 1000)
+    query = f"""
+    [out:json][timeout:8];
+    (
+      node(around:{radius_m},{center_lat},{center_lng})["amenity"="parking"];
+      way(around:{radius_m},{center_lat},{center_lng})["amenity"="parking"];
+      relation(around:{radius_m},{center_lat},{center_lng})["amenity"="parking"];
+      node(around:{radius_m},{center_lat},{center_lng})["amenity"="parking_space"];
+      way(around:{radius_m},{center_lat},{center_lng})["amenity"="parking_space"];
+      node(around:{radius_m},{center_lat},{center_lng})["amenity"~"restaurant|cafe|bar|pub|fast_food|school|college|university|cinema|theatre|place_of_worship|clinic|doctors|dentist|hospital"];
+      way(around:{radius_m},{center_lat},{center_lng})["amenity"~"restaurant|cafe|bar|pub|fast_food|school|college|university|cinema|theatre|place_of_worship|clinic|doctors|dentist|hospital"];
+      node(around:{radius_m},{center_lat},{center_lng})["shop"];
+      way(around:{radius_m},{center_lat},{center_lng})["shop"];
+      node(around:{radius_m},{center_lat},{center_lng})["office"];
+      way(around:{radius_m},{center_lat},{center_lng})["office"];
+    );
+    out body center;
+    """
+    data = _query_overpass(query)
+    if data is None:
+        return None, None, None
+
+    parking_weight = 0.0
+    capacity_sum = 0.0
+    poi_demand_weight = 0.0
+    for element in data.get("elements", []):
+        tags = element.get("tags", {})
+        lat, lng = _element_lat_lng(element)
+        distance_weight = 1.0
+        if lat is not None and lng is not None:
+            distance_km = _haversine_km(center_lat, center_lng, lat, lng)
+            distance_weight = _distance_decay_weight(distance_km, radius_km)
+
+        if tags.get("amenity") in {"parking", "parking_space"}:
+            access = (tags.get("access") or "").lower()
+            if access in {"private", "no"}:
+                continue
+            parking_weight += distance_weight * _parking_facility_weight(tags)
+            capacity = _parse_positive_float(tags.get("capacity"))
+            if capacity is not None:
+                capacity_sum += capacity * distance_weight
+            elif tags.get("amenity") == "parking_space":
+                capacity_sum += distance_weight
+            continue
+
+        poi_demand_weight += distance_weight * _parking_demand_weight(tags)
+
+    area_km2 = math.pi * radius_km * radius_km
+    if area_km2 <= 0:
+        return None, None, None
+    return (
+        round(parking_weight / area_km2, 3),
+        round(capacity_sum / area_km2, 3),
+        round(poi_demand_weight / area_km2, 3),
+    )
+
+
 # def fetch_night_activity_index(
 #     center_lat: float, center_lng: float, radius_km: float = 1.5
 # ) -> float | None:
@@ -202,6 +268,39 @@ def _grocery_size_weight(tags: dict) -> float:
         base *= level_factor
 
     return min(2.5, max(0.2, base))
+
+
+def _parking_facility_weight(tags: dict) -> float:
+    amenity = (tags.get("amenity") or "").lower()
+    parking = (tags.get("parking") or "").lower()
+    if amenity == "parking_space":
+        return 0.15
+    if parking in {"multi-storey", "underground"}:
+        return 1.8
+    if parking in {"street_side", "lane", "on_kerb", "half_on_kerb", "shoulder"}:
+        return 0.6
+    if parking == "surface" or not parking:
+        return 1.0
+    return 0.8
+
+
+def _parking_demand_weight(tags: dict) -> float:
+    amenity = (tags.get("amenity") or "").lower()
+    if tags.get("office"):
+        return 1.0
+    if tags.get("shop"):
+        return 0.8
+    if amenity in {"restaurant", "cafe", "bar", "pub", "fast_food"}:
+        return 1.0
+    if amenity in {"school", "college", "university"}:
+        return 1.2
+    if amenity in {"cinema", "theatre"}:
+        return 1.4
+    if amenity in {"clinic", "doctors", "dentist", "hospital"}:
+        return 1.1
+    if amenity == "place_of_worship":
+        return 0.7
+    return 0.4
 
 
 def _parse_positive_float(value: str | None) -> float | None:

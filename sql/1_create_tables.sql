@@ -42,6 +42,10 @@ CREATE TABLE community_metrics (
   night_activity_index     double precision,
   noise_avg_db             double precision,
   noise_p90_db             double precision,
+  commute_minutes          double precision,
+  parking_lot_density_per_km2 double precision,
+  parking_capacity_per_km2 double precision,
+  poi_demand_density_per_km2 double precision,
 
   youtube_video_ids        text,
   youtube_comments         text,
