@@ -168,6 +168,15 @@ def upsert_dimension_score(
     return row
 
 
+def get_dimension_scores(db: Session, community_id: str) -> list[DimensionScore]:
+    stmt = (
+        select(DimensionScore)
+        .where(DimensionScore.community_id == community_id)
+        .order_by(DimensionScore.dimension.asc())
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def get_reviews_by_community(
     db: Session, community_id: str, limit: int = 50
 ) -> list[ReviewPost]:
@@ -266,6 +275,7 @@ def upsert_review_posts(
                 community_id=community_id,
                 platform=platform,
                 external_id=r["id"],
+                url=r.get("url"),
                 body_text=r["text"],
                 posted_at=posted_at,
                 author_name=r.get("author_name"),

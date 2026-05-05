@@ -331,6 +331,7 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
     for item in raw_comments:
         if isinstance(item, dict):
             # New structured format
+            video_id = item.get("video_id")
             review_dicts.append({
                 "id": item.get("id"),
                 "text": item.get("text"),
@@ -338,6 +339,7 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
                 "author_name": item.get("author"),
                 "like_count": item.get("like_count"),
                 "parent_id": item.get("parent_id"),
+                "url": _youtube_comment_url(video_id, item.get("id")),
             })
         else:
             # Fallback for old simple string format
@@ -347,10 +349,20 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
                     "id": f"yt-{text_hash}",
                     "text": item,
                     "published_at": None,
+                    "url": None,
                 }
             )
 
     crud.upsert_review_posts(db, community_id, "youtube", review_dicts)
+
+
+def _youtube_comment_url(video_id, comment_id) -> str | None:
+    if not video_id:
+        return None
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    if comment_id:
+        return f"{url}&lc={comment_id}"
+    return url
 
 def _to_float(value: str | None) -> float | None:
     if value in (None, ""):
