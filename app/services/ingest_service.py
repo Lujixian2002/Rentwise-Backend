@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db import crud
+from app.services.fetchers.crimegrade import fetch_crimegrade_violent_rate_per_100k
 from app.services.fetchers.irvine_crime import fetch_crime_rate_per_100k_with_source
+from app.services.fetchers.local_crime import fetch_crime_rate_per_100k as fetch_local_crime_rate
 from app.services.fetchers.google_maps import (
     fetch_commute_minutes as fetch_google_commute_minutes,
 )
@@ -17,6 +19,7 @@ from app.services.fetchers.openrouteservice import (
 from app.services.fetchers.overpass_osm import (
     fetch_grocery_density,
     fetch_noise_proxy,
+    fetch_parking_metrics,
 )
 from app.services.fetchers.youtube import fetch_comments, search_videos
 from app.services.fetchers.zillow_zori import read_zori_rows
@@ -52,8 +55,12 @@ def ensure_metrics_fresh_with_options(
     if community is None:
         return
 
-    # ZORI (local CSV for rent baseline)
-    zori_rows = read_zori_rows()
+    # ZORI (local CSV for rent baseline) — look up current community's city.
+    zori_rows = read_zori_rows(
+        city=community.city or "Irvine",
+        state=community.state or "CA",
+        community_ids=[community_id],
+    )
     match = next(
         (row for row in zori_rows if row.get("community_id") == community_id), None
     )
@@ -63,6 +70,9 @@ def ensure_metrics_fresh_with_options(
     noise_avg_db = None
     noise_p90_db = None
     commute_minutes = None
+    parking_lot_density = None
+    parking_capacity = None
+    poi_demand_density = None
     if (
         not skip_external
         and community.center_lat is not None
@@ -79,6 +89,9 @@ def ensure_metrics_fresh_with_options(
             night_activity_source = "local_viirs"
         noise_avg_db, noise_p90_db = fetch_noise_proxy(
             community.center_lat, community.center_lng
+        )
+        parking_lot_density, parking_capacity, poi_demand_density = (
+            fetch_parking_metrics(community.center_lat, community.center_lng)
         )
         commute_minutes = _fetch_commute_minutes_with_fallback(
             community.center_lat, community.center_lng
@@ -97,14 +110,62 @@ def ensure_metrics_fresh_with_options(
         if night_activity_source == "none":
             night_activity_source = "default"
 
+    # Keep noise metrics stable: fallback to previous cached values.
+    if noise_avg_db is None and existing and existing.noise_avg_db is not None:
+        noise_avg_db = existing.noise_avg_db
+    if noise_p90_db is None and existing and existing.noise_p90_db is not None:
+        noise_p90_db = existing.noise_p90_db
+    if commute_minutes is None and existing and existing.commute_minutes is not None:
+        commute_minutes = existing.commute_minutes
+    if (
+        parking_lot_density is None
+        and existing
+        and existing.parking_lot_density_per_km2 is not None
+    ):
+        parking_lot_density = existing.parking_lot_density_per_km2
+    if (
+        parking_capacity is None
+        and existing
+        and existing.parking_capacity_per_km2 is not None
+    ):
+        parking_capacity = existing.parking_capacity_per_km2
+    if (
+        poi_demand_density is None
+        and existing
+        and existing.poi_demand_density_per_km2 is not None
+    ):
+        poi_demand_density = existing.poi_demand_density_per_km2
+
+    # Keep grocery density stable: fallback to cached value when Overpass is flaky.
+    if (
+        grocery_density is None
+        and existing
+        and existing.grocery_density_per_km2 is not None
+    ):
+        grocery_density = existing.grocery_density_per_km2
+
     crime_rate = None
     crime_source = "skipped" if skip_external else "missing"
     if not skip_external:
-        crime_rate, crime_source = fetch_crime_rate_per_100k_with_source(
+        # Try CrimeGrade public pages first, then Crimeometer if configured,
+        # then local UCR baseline + density-multiplier heuristic.
+        crime_rate, crime_source = fetch_crimegrade_violent_rate_per_100k(
+            community.name,
             community.city,
-            center_lat=community.center_lat,
-            center_lng=community.center_lng,
+            community.state,
         )
+        if crime_rate is None:
+            crime_rate, crime_source = fetch_crime_rate_per_100k_with_source(
+                community.city,
+                center_lat=community.center_lat,
+                center_lng=community.center_lng,
+            )
+            if crime_rate is None:
+                crime_rate, crime_source = fetch_local_crime_rate(
+                    community.city,
+                    state=community.state,
+                    grocery_density_per_km2=grocery_density,
+                )
 
     # YouTube fetching is enabled for testing when YOUTUBE_API_KEY is set.
     youtube_video_ids = []
@@ -161,6 +222,10 @@ def ensure_metrics_fresh_with_options(
         "night_activity_index": night_activity_index,
         "noise_avg_db": noise_avg_db,
         "noise_p90_db": noise_p90_db,
+        "commute_minutes": commute_minutes,
+        "parking_lot_density_per_km2": parking_lot_density,
+        "parking_capacity_per_km2": parking_capacity,
+        "poi_demand_density_per_km2": poi_demand_density,
         "overall_confidence": 0.5,
         "details_json": "{}",
     }
@@ -197,8 +262,10 @@ def ensure_metrics_fresh_with_options(
                 "irvine_crime_source": crime_source,
                 "crime_api": crime_rate is not None,
                 "crime_api_source": crime_source,
+                "crimegrade": crime_source.startswith("crimegrade:"),
                 "youtube_video": bool(youtube_video_ids),
                 "commute_minutes": commute_minutes,
+                "overpass_parking": parking_lot_density is not None,
                 "viirs_night_activity": night_activity_source == "local_viirs",
                 "night_activity_source": night_activity_source,
             }
@@ -209,12 +276,15 @@ def ensure_metrics_fresh_with_options(
     metrics = crud.upsert_metrics(db, community_id, payload)
     score_input = {
         "median_rent": metrics.median_rent,
-        "commute_minutes": commute_minutes,
+        "commute_minutes": metrics.commute_minutes,
         "grocery_density_per_km2": metrics.grocery_density_per_km2,
         "crime_rate_per_100k": metrics.crime_rate_per_100k,
         "rent_trend_12m_pct": metrics.rent_trend_12m_pct,
         "noise_avg_db": metrics.noise_avg_db,
         "night_activity_index": metrics.night_activity_index,
+        "parking_lot_density_per_km2": metrics.parking_lot_density_per_km2,
+        "parking_capacity_per_km2": metrics.parking_capacity_per_km2,
+        "poi_demand_density_per_km2": metrics.poi_demand_density_per_km2,
         "review_signal_score": None,
     }
     scores = compute_dimension_scores(score_input)
@@ -261,6 +331,7 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
     for item in raw_comments:
         if isinstance(item, dict):
             # New structured format
+            video_id = item.get("video_id")
             review_dicts.append({
                 "id": item.get("id"),
                 "text": item.get("text"),
@@ -268,6 +339,7 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
                 "author_name": item.get("author"),
                 "like_count": item.get("like_count"),
                 "parent_id": item.get("parent_id"),
+                "url": _youtube_comment_url(video_id, item.get("id")),
             })
         else:
             # Fallback for old simple string format
@@ -277,11 +349,20 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
                     "id": f"yt-{text_hash}",
                     "text": item,
                     "published_at": None,
+                    "url": None,
                 }
             )
 
     crud.upsert_review_posts(db, community_id, "youtube", review_dicts)
 
+
+def _youtube_comment_url(video_id, comment_id) -> str | None:
+    if not video_id:
+        return None
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    if comment_id:
+        return f"{url}&lc={comment_id}"
+    return url
 
 def _to_float(value: str | None) -> float | None:
     if value in (None, ""):

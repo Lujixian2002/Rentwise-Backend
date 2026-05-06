@@ -42,6 +42,10 @@ CREATE TABLE community_metrics (
   night_activity_index     double precision,
   noise_avg_db             double precision,
   noise_p90_db             double precision,
+  commute_minutes          double precision,
+  parking_lot_density_per_km2 double precision,
+  parking_capacity_per_km2 double precision,
+  poi_demand_density_per_km2 double precision,
 
   youtube_video_ids        text,
   youtube_comments         text,
@@ -76,7 +80,14 @@ CREATE TABLE review_post (
   body_text     text,
   parent_id     varchar(128),
   author_name   varchar(128),
-  like_count    double precision
+  like_count    double precision,
+  ai_filter_keep boolean,
+  ai_filter_category varchar(32),
+  ai_filter_reason text,
+  ai_filter_model varchar(64),
+  ai_filter_prompt_version varchar(32),
+  ai_filter_text_hash varchar(64),
+  ai_filter_checked_at timestamp
 );
 
 -- Optional (recommended): prevent duplicate crawls per platform
@@ -152,6 +163,9 @@ CREATE INDEX ix_context_by_comm_type
 
 CREATE INDEX ix_review_post_by_comm_time
   ON review_post(community_id, posted_at);
+
+CREATE INDEX ix_review_post_ai_filter_hash
+  ON review_post(ai_filter_text_hash, ai_filter_model, ai_filter_prompt_version);
 
 CREATE INDEX ix_review_signal_by_post
   ON review_signal(post_id);

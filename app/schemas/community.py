@@ -25,6 +25,10 @@ class CommunityMetricsResponse(BaseModel):
     night_activity_index: float | None = None
     noise_avg_db: float | None = None
     noise_p90_db: float | None = None
+    commute_minutes: float | None = None
+    parking_lot_density_per_km2: float | None = None
+    parking_capacity_per_km2: float | None = None
+    poi_demand_density_per_km2: float | None = None
     overall_confidence: float | None = None
     updated_at: datetime | None = None
 
@@ -38,6 +42,14 @@ class ReviewResponse(BaseModel):
     author_name: str | None = None
     like_count: float | None = None
     parent_id: str | None = None
+
+
+class ReviewKeywordConfigResponse(BaseModel):
+    version: str
+    stop_words: list[str]
+    noise_words: list[str]
+    rental_signal_words: list[str]
+    phrases: list[str]
 
 
 class CommunityDetailResponse(BaseModel):

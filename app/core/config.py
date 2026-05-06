@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str = "sqlite:///./rentwise.db"
+    database_url: str
     app_env: str = "dev"
     metrics_ttl_hours: int = 24
 
@@ -29,12 +29,22 @@ class Settings(BaseSettings):
     nasa_earthdata_token: str | None = None
     viirs_days_back: int = 30
     viirs_bbox_radius_km: float = 10.0
-    viirs_local_radiance_tif: str = "data/viirs_nightlights_2025-12_tile_00N060W/avg_radiance.tif"
+    viirs_local_radiance_tif: str = "data/viirs_nightlights_2025-12_tile_75N180W/avg_radiance.tif"
     viirs_sample_radius_km: float = 2.0
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    openai_api_key: str | None = None
+    openai_web_search_model: str = "gpt-4o-mini"
+    openai_web_search_timeout_sec: float = 45.0
+    openai_review_filter_model: str = "gpt-5.4-nano"
+    openai_review_filter_timeout_sec: float = 20.0
+
+    model_config = SettingsConfigDict(
+        env_file=(".env", ".env.local"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache

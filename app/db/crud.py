@@ -3,8 +3,8 @@ import re
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session, load_only
 
 from app.db.models import (
     Community,
@@ -18,6 +18,50 @@ from app.db.models import (
 def get_community(db: Session, community_id: str) -> Community | None:
     stmt = select(Community).where(Community.community_id == community_id)
     return db.execute(stmt).scalar_one_or_none()
+
+
+def list_communities_with_metrics(
+    db: Session,
+) -> list[tuple[Community, CommunityMetrics | None]]:
+    stmt = (
+        select(Community, CommunityMetrics)
+        .outerjoin(
+            CommunityMetrics, CommunityMetrics.community_id == Community.community_id
+        )
+        .options(
+            load_only(
+                Community.community_id,
+                Community.name,
+                Community.city,
+                Community.state,
+                Community.center_lat,
+                Community.center_lng,
+                Community.updated_at,
+            ),
+            load_only(
+                CommunityMetrics.community_id,
+                CommunityMetrics.median_rent,
+                CommunityMetrics.rent_2b2b,
+                CommunityMetrics.rent_1b1b,
+                CommunityMetrics.avg_sqft,
+                CommunityMetrics.grocery_density_per_km2,
+                CommunityMetrics.crime_rate_per_100k,
+                CommunityMetrics.rent_trend_12m_pct,
+                CommunityMetrics.night_activity_index,
+                CommunityMetrics.noise_avg_db,
+                CommunityMetrics.noise_p90_db,
+                CommunityMetrics.commute_minutes,
+                CommunityMetrics.parking_lot_density_per_km2,
+                CommunityMetrics.parking_capacity_per_km2,
+                CommunityMetrics.poi_demand_density_per_km2,
+                CommunityMetrics.overall_confidence,
+                CommunityMetrics.details_json,
+                CommunityMetrics.updated_at,
+            ),
+        )
+        .order_by(Community.name.asc())
+    )
+    return list(db.execute(stmt).all())
 
 
 def get_community_by_name(db: Session, name: str) -> Community | None:
@@ -124,9 +168,19 @@ def upsert_dimension_score(
     return row
 
 
+def get_dimension_scores(db: Session, community_id: str) -> list[DimensionScore]:
+    stmt = (
+        select(DimensionScore)
+        .where(DimensionScore.community_id == community_id)
+        .order_by(DimensionScore.dimension.asc())
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def get_reviews_by_community(
     db: Session, community_id: str, limit: int = 50
 ) -> list[ReviewPost]:
+    ensure_review_filter_cache_columns(db)
     stmt = (
         select(ReviewPost)
         .where(ReviewPost.community_id == community_id)
@@ -134,6 +188,25 @@ def get_reviews_by_community(
         .limit(limit)
     )
     return list(db.execute(stmt).scalars().all())
+
+
+def ensure_review_filter_cache_columns(db: Session) -> None:
+    statements = (
+        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_keep boolean",
+        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_category varchar(32)",
+        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_reason text",
+        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_model varchar(64)",
+        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_prompt_version varchar(32)",
+        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_text_hash varchar(64)",
+        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_checked_at timestamp",
+        (
+            "CREATE INDEX IF NOT EXISTS ix_review_post_ai_filter_hash "
+            "ON review_post(ai_filter_text_hash, ai_filter_model, ai_filter_prompt_version)"
+        ),
+    )
+    for statement in statements:
+        db.execute(text(statement))
+    db.commit()
 
 
 def get_reviews_count(db: Session, community_id: str) -> int:
@@ -155,22 +228,31 @@ def create_comparison(
     data_origin: str = "mixed",
 ) -> CommunityComparison:
     now = datetime.utcnow()
-    row = CommunityComparison(
-        comparison_id=uuid4().hex,
-        community_a_id=community_a_id,
-        community_b_id=community_b_id,
-        created_at=now,
-        updated_at=now,
-        request_params_json=json.dumps(request_params, ensure_ascii=True),
-        weights_used_json=json.dumps(weights_used, ensure_ascii=True),
-        structured_diff_json=json.dumps(structured_diff, ensure_ascii=True),
-        short_summary=short_summary,
-        tradeoffs_json=json.dumps(tradeoffs, ensure_ascii=True),
-        status=status,
-        missing_fields_json=json.dumps(missing_fields or [], ensure_ascii=True),
-        data_origin=data_origin,
+    stmt = select(CommunityComparison).where(
+        CommunityComparison.community_a_id == community_a_id,
+        CommunityComparison.community_b_id == community_b_id,
     )
-    db.add(row)
+    row = db.execute(stmt).scalar_one_or_none()
+
+    if row is None:
+        row = CommunityComparison(
+            comparison_id=uuid4().hex,
+            community_a_id=community_a_id,
+            community_b_id=community_b_id,
+            created_at=now,
+        )
+        db.add(row)
+
+    row.updated_at = now
+    row.request_params_json = json.dumps(request_params, ensure_ascii=True)
+    row.weights_used_json = json.dumps(weights_used, ensure_ascii=True)
+    row.structured_diff_json = json.dumps(structured_diff, ensure_ascii=True)
+    row.short_summary = short_summary
+    row.tradeoffs_json = json.dumps(tradeoffs, ensure_ascii=True)
+    row.status = status
+    row.missing_fields_json = json.dumps(missing_fields or [], ensure_ascii=True)
+    row.data_origin = data_origin
+
     db.commit()
     db.refresh(row)
     return row
@@ -186,6 +268,7 @@ def upsert_review_posts(
     incoming_ids = [r["id"] for r in reviews]
     if not incoming_ids:
         return 0
+    ensure_review_filter_cache_columns(db)
 
     stmt = select(ReviewPost.external_id).where(
         ReviewPost.community_id == community_id,
@@ -213,6 +296,7 @@ def upsert_review_posts(
                 community_id=community_id,
                 platform=platform,
                 external_id=r["id"],
+                url=r.get("url"),
                 body_text=r["text"],
                 posted_at=posted_at,
                 author_name=r.get("author_name"),

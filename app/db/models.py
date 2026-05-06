@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, String, Text
+from sqlalchemy import Boolean, DateTime, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -36,6 +36,10 @@ class CommunityMetrics(Base):
     night_activity_index: Mapped[float | None] = mapped_column(Float)
     noise_avg_db: Mapped[float | None] = mapped_column(Float)
     noise_p90_db: Mapped[float | None] = mapped_column(Float)
+    commute_minutes: Mapped[float | None] = mapped_column(Float)
+    parking_lot_density_per_km2: Mapped[float | None] = mapped_column(Float)
+    parking_capacity_per_km2: Mapped[float | None] = mapped_column(Float)
+    poi_demand_density_per_km2: Mapped[float | None] = mapped_column(Float)
 
     # Storing a list of video IDs as a JSON string
     youtube_video_ids: Mapped[str | None] = mapped_column(Text)
@@ -43,7 +47,6 @@ class CommunityMetrics(Base):
     youtube_comments: Mapped[str | None] = mapped_column(Text)
     
     overall_confidence: Mapped[float | None] = mapped_column(Float)
-    details_json: Mapped[str | None] = mapped_column(Text)
     details_json: Mapped[str | None] = mapped_column(Text)
 
 
@@ -97,3 +100,10 @@ class ReviewPost(Base):
     parent_id: Mapped[str | None] = mapped_column(String(128)) # external_id of the parent post/comment
     author_name: Mapped[str | None] = mapped_column(String(128))
     like_count: Mapped[int | None] = mapped_column(Float)
+    ai_filter_keep: Mapped[bool | None] = mapped_column(Boolean)
+    ai_filter_category: Mapped[str | None] = mapped_column(String(32))
+    ai_filter_reason: Mapped[str | None] = mapped_column(Text)
+    ai_filter_model: Mapped[str | None] = mapped_column(String(64))
+    ai_filter_prompt_version: Mapped[str | None] = mapped_column(String(32))
+    ai_filter_text_hash: Mapped[str | None] = mapped_column(String(64))
+    ai_filter_checked_at: Mapped[datetime | None] = mapped_column(DateTime)

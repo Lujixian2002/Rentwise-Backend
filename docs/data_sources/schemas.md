@@ -7,10 +7,12 @@
 | Zillow ZORI City CSV | `read_zori_rows()` in `zillow_zori.py` | `RegionName/RegionType/State/时间序列列` | 最新租金、12个月趋势 | `median_rent`, `rent_trend_12m_pct` |
 | VIIRS Night Lights (local tif) | `fetch_viirs_night_activity_index()` in `nasa_viirs.py` | `avg_radiance.tif` + community lat/lng | Night activity index | `night_activity_index` |
 | OSM Overpass | `fetch_grocery_density()` | `lat,lng,radius` | Grocery density | `grocery_density_per_km2` |
+| OSM Overpass | `fetch_parking_metrics()` | `lat,lng,radius` | Parking supply + demand pressure | `parking_lot_density_per_km2`, `parking_capacity_per_km2`, `poi_demand_density_per_km2` |
 | OSM Overpass | `fetch_night_activity_index()` | `lat,lng,radius` | Night activity proxy | `night_activity_index` |
 | OSM Overpass | `fetch_noise_proxy()` | `lat,lng,radius` | Noise proxy | `noise_avg_db`, `noise_p90_db` |
 | Crimeometer API | `fetch_crime_rate_per_100k_with_source()` | `lat,lng,radius,datetime range` | Crime rate per 100k | `crime_rate_per_100k` |
-| Google Maps / ORS | Placeholder | `origin,destination` | Commute minutes | planned (`commute_minutes`) |
+| CrimeGrade public pages | `fetch_crimegrade_violent_rate_per_100k()` | `community,city,state` | Violent crime rate per 100k | `crime_rate_per_100k` |
+| Google Routes API / ORS | `fetch_commute_minutes()` | `origin,destination` | Commute minutes | `commute_minutes` |
 | Reddit / Forums | Not implemented | text posts | Review signal score | planned (`review_signal_score`) |
 
 ## 1) ZORI CSV (`data/City_zori_uc_sfrcondomfr_sm_month.csv`)
@@ -43,6 +45,7 @@
 | Function | Output | DB Mapping |
 |---|---|---|
 | `fetch_grocery_density(...)` | `float | None` | `community_metrics.grocery_density_per_km2` |
+| `fetch_parking_metrics(...)` | `(float | None, float | None, float | None)` | `community_metrics.parking_lot_density_per_km2`, `community_metrics.parking_capacity_per_km2`, `community_metrics.poi_demand_density_per_km2` |
 | `fetch_night_activity_index(...)` | `float | None` (0-100) | `community_metrics.night_activity_index` |
 | `fetch_noise_proxy(...)` | `(noise_avg_db, noise_p90_db)` | `community_metrics.noise_avg_db`, `community_metrics.noise_p90_db` |
 
@@ -54,6 +57,7 @@
 ### Fetcher Output
 | Function | Output | DB Mapping |
 |---|---|---|
+| `fetch_crimegrade_violent_rate_per_100k(community_name, city, state)` | `(float | None, str)` | `community_metrics.crime_rate_per_100k` |
 | `fetch_crime_rate_per_100k_with_source(city, center_lat, center_lng)` | `(float | None, str)` | `community_metrics.crime_rate_per_100k` |
 
 ### Current Limitation
