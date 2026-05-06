@@ -134,6 +134,7 @@ class CommunityReportMetricSnapshot(BaseModel):
     commute_minutes: float | None = None
     grocery_density_per_km2: float | None = None
     crime_rate_per_100k: float | None = None
+    rent_trend_12m_pct: float | None = None
     noise_avg_db: float | None = None
     night_activity_index: float | None = None
     parking_lot_density_per_km2: float | None = None

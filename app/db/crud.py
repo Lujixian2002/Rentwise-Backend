@@ -270,16 +270,29 @@ def upsert_review_posts(
         return 0
     ensure_review_filter_cache_columns(db)
 
-    stmt = select(ReviewPost.external_id).where(
+    stmt = select(ReviewPost).where(
         ReviewPost.community_id == community_id,
         ReviewPost.platform == platform,
         ReviewPost.external_id.in_(incoming_ids),
     )
-    existing_ids = set(db.execute(stmt).scalars().all())
+    existing_posts = {
+        post.external_id: post for post in db.execute(stmt).scalars().all()
+    }
+    existing_ids = set(existing_posts)
 
     new_posts = []
     for r in reviews:
-        if r["id"] not in existing_ids:
+        existing_post = existing_posts.get(r["id"])
+        if existing_post is not None:
+            if not existing_post.url and r.get("url"):
+                existing_post.url = r.get("url")
+            if not existing_post.author_name and r.get("author_name"):
+                existing_post.author_name = r.get("author_name")
+            if existing_post.like_count is None and r.get("like_count") is not None:
+                existing_post.like_count = r.get("like_count")
+            if not existing_post.parent_id and r.get("parent_id"):
+                existing_post.parent_id = r.get("parent_id")
+        elif r["id"] not in existing_ids:
             # Parse datetime if available, else now
             posted_at = datetime.utcnow()
             if r.get("published_at"):
@@ -307,7 +320,7 @@ def upsert_review_posts(
 
     if new_posts:
         db.add_all(new_posts)
-        db.commit()
+    db.commit()
     return len(new_posts)
 
 

@@ -19,6 +19,7 @@ from app.schemas.agent import (
     CommunityReportSection,
 )
 from app.services.scoring_service import PREFERENCE_DIMENSIONS
+from app.services.ingest_service import ensure_reviews_fresh
 from app.skills.base import Skill, SkillContext
 
 _REPORT_SYSTEM_PROMPT = """You generate personalized single-community report content for RentWise.
@@ -72,6 +73,7 @@ class CommunityReportSkill(Skill):
 
         metrics = crud.get_metrics(context.db, community_id)
         dimension_scores = crud.get_dimension_scores(context.db, community_id)
+        ensure_reviews_fresh(context.db, community_id)
         reviews = crud.get_reviews_by_community(context.db, community_id, limit=8)
         preferences = _clean_preferences(payload.get("user_preferences"))
 
@@ -380,17 +382,27 @@ def _location_payload(community) -> CommunityReportLocation:
 def _metrics_payload(metrics) -> dict:
     if metrics is None:
         return {}
+    core_metric_values = [
+        metrics.median_rent,
+        metrics.grocery_density_per_km2,
+        metrics.crime_rate_per_100k,
+        metrics.rent_trend_12m_pct,
+        metrics.night_activity_index,
+        metrics.noise_avg_db,
+    ]
+    available_core_metrics = sum(value is not None for value in core_metric_values)
     return {
         "median_rent": metrics.median_rent,
         "commute_minutes": metrics.commute_minutes,
         "grocery_density_per_km2": metrics.grocery_density_per_km2,
         "crime_rate_per_100k": metrics.crime_rate_per_100k,
+        "rent_trend_12m_pct": metrics.rent_trend_12m_pct,
         "noise_avg_db": metrics.noise_avg_db,
         "night_activity_index": metrics.night_activity_index,
         "parking_lot_density_per_km2": metrics.parking_lot_density_per_km2,
         "parking_capacity_per_km2": metrics.parking_capacity_per_km2,
         "poi_demand_density_per_km2": metrics.poi_demand_density_per_km2,
-        "overall_confidence": metrics.overall_confidence,
+        "overall_confidence": round(available_core_metrics / len(core_metric_values), 2),
     }
 
 

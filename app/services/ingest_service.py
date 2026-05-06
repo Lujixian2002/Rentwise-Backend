@@ -305,12 +305,8 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
     Ensures that the ReviewPost table is populated from the aggregated
     comments stored in CommunityMetrics (fetched during ingestion).
     """
-    # 1. Check if we already have structured posts
-    existing_count = crud.get_reviews_count(db, community_id)
-    if existing_count > 0:
-        return
-
-    # 2. Get metrics to find the raw cached comments
+    # Get metrics to find the raw cached comments. We still run this when
+    # review_post rows already exist so older rows can be backfilled with URLs.
     metrics = crud.get_metrics(db, community_id)
     if not metrics or not metrics.youtube_comments:
         # If no metrics or no comments cached, we can't do much.
@@ -318,7 +314,7 @@ def ensure_reviews_fresh(db: Session, community_id: str) -> None:
         # We could trigger it here, but typically /communities/{id} is called before /reviews
         return
 
-    # 3. Parse cached comments and insert into ReviewPost table
+    # Parse cached comments and insert/update ReviewPost rows.
     try:
         raw_comments = json.loads(metrics.youtube_comments)
     except json.JSONDecodeError:
