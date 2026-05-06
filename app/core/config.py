@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_web_search_model: str = "gpt-4o-mini"
     openai_web_search_timeout_sec: float = 45.0
+    openai_review_filter_model: str = "gpt-5.4-nano"
+    openai_review_filter_timeout_sec: float = 20.0
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),

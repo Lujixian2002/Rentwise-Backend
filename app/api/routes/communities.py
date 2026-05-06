@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -10,11 +10,14 @@ from app.schemas.community import (
     CommunityDetailResponse,
     CommunityMetricsResponse,
     CommunityResponse,
+    ReviewKeywordConfigResponse,
     ReviewResponse,
 )
 from app.schemas.insight import CommunityInsightRequest, CommunityInsightResponse
 from app.services.insight_service import generate_community_insight
 from app.services.ingest_service import ensure_metrics_fresh, ensure_reviews_fresh
+from app.services.review_keyword_config import get_review_keyword_config
+from app.services.review_filter_service import filter_reviews_for_community_ui
 
 router = APIRouter()
 
@@ -23,6 +26,11 @@ router = APIRouter()
 def list_communities(db: Session = Depends(get_db)) -> list[CommunityDetailResponse]:
     rows = crud.list_communities_with_metrics(db)
     return [_build_detail_response(community, metrics) for community, metrics in rows]
+
+
+@router.get("/review-keyword-config", response_model=ReviewKeywordConfigResponse)
+def get_community_review_keyword_config() -> ReviewKeywordConfigResponse:
+    return get_review_keyword_config()
 
 
 @router.get("/{community_id}", response_model=CommunityDetailResponse)
@@ -37,13 +45,31 @@ def get_community(community_id: str, db: Session = Depends(get_db)) -> Community
 
 
 @router.get("/{community_id}/reviews", response_model=list[ReviewResponse])
-def get_community_reviews(
-    community_id: str, db: Session = Depends(get_db)
+async def get_community_reviews(
+    community_id: str,
+    ai_filter: bool = Query(
+        default=False,
+        description="When true, remove obvious ads, spam, and off-topic comments using OpenAI when configured.",
+    ),
+    refresh_ai_filter: bool = Query(
+        default=False,
+        description="When true, recompute AI review filter decisions instead of using the cache.",
+    ),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> list[ReviewResponse]:
     # Check/fetch fresh reviews if none exist
     ensure_reviews_fresh(db, community_id)
     
     reviews = crud.get_reviews_by_community(db, community_id, limit=200)
+    if ai_filter:
+        reviews = await filter_reviews_for_community_ui(
+            reviews,
+            settings,
+            db,
+            refresh=refresh_ai_filter,
+        )
+
     return [
         ReviewResponse(
             post_id=r.post_id,

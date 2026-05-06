@@ -44,6 +44,14 @@ class ReviewResponse(BaseModel):
     parent_id: str | None = None
 
 
+class ReviewKeywordConfigResponse(BaseModel):
+    version: str
+    stop_words: list[str]
+    noise_words: list[str]
+    rental_signal_words: list[str]
+    phrases: list[str]
+
+
 class CommunityDetailResponse(BaseModel):
     community: CommunityResponse
     metrics: CommunityMetricsResponse | None = None

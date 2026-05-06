@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, String, Text
+from sqlalchemy import Boolean, DateTime, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -100,3 +100,10 @@ class ReviewPost(Base):
     parent_id: Mapped[str | None] = mapped_column(String(128)) # external_id of the parent post/comment
     author_name: Mapped[str | None] = mapped_column(String(128))
     like_count: Mapped[int | None] = mapped_column(Float)
+    ai_filter_keep: Mapped[bool | None] = mapped_column(Boolean)
+    ai_filter_category: Mapped[str | None] = mapped_column(String(32))
+    ai_filter_reason: Mapped[str | None] = mapped_column(Text)
+    ai_filter_model: Mapped[str | None] = mapped_column(String(64))
+    ai_filter_prompt_version: Mapped[str | None] = mapped_column(String(32))
+    ai_filter_text_hash: Mapped[str | None] = mapped_column(String(64))
+    ai_filter_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
