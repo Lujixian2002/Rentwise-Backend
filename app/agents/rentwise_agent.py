@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.agents.chat_agent import run_agent_chat
 from app.core.config import Settings
-from app.schemas.agent import CommunityReportResponse, CommunitySearchResponse
+from app.schemas.agent import AgentChatResponse, CommunityReportResponse, CommunitySearchResponse
+from app.schemas.chat import ChatMessage
 from app.skills.base import SkillContext
 from app.skills.registry import SkillRegistry, default_skill_registry
 
@@ -55,3 +57,6 @@ class RentWiseAgent:
             context=self.context,
         )
         return result
+
+    async def chat(self, messages: list[ChatMessage]) -> AgentChatResponse:
+        return await run_agent_chat(self, messages)

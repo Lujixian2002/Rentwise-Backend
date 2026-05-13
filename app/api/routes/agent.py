@@ -5,6 +5,8 @@ from app.api.deps import get_db
 from app.agents.rentwise_agent import RentWiseAgent
 from app.core.config import Settings, get_settings
 from app.schemas.agent import (
+    AgentChatRequest,
+    AgentChatResponse,
     CommunityDiscoveryRequest,
     CommunityDiscoveryResponse,
     CommunityIntakeRequest,
@@ -71,3 +73,13 @@ async def community_report(
         community_id=req.community_id,
         user_preferences=req.user_preferences,
     )
+
+
+@router.post("/chat", response_model=AgentChatResponse)
+async def agent_chat(
+    req: AgentChatRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> AgentChatResponse:
+    agent = RentWiseAgent(db=db, settings=settings)
+    return await agent.chat(req.messages)

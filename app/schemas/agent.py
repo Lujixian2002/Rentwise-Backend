@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.chat import ChatMessage, PreferenceWeights
 from app.schemas.community import CommunityResponse
 from app.schemas.insight import CommunityWebSource
 
@@ -170,4 +171,32 @@ class CommunityReportResponse(BaseModel):
     user_preferences: dict[str, float] = Field(default_factory=dict)
     sections: list[CommunityReportSection] = Field(default_factory=list)
     html_fragment: str | None = None
+    agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+
+
+class AgentChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+
+class AgentSkillCall(BaseModel):
+    name: str
+    status: Literal["success", "failed", "skipped"]
+    detail: str | None = None
+
+
+class AgentChatResponse(BaseModel):
+    intent: Literal[
+        "community_search",
+        "community_report",
+        "web_research",
+        "preference_extraction",
+        "general_chat",
+    ]
+    reply: str
+    weights: PreferenceWeights | None = None
+    ready_to_recommend: bool = False
+    community_search: CommunitySearchResponse | None = None
+    community_report: CommunityReportResponse | None = None
+    sources: list[CommunityWebSource] = Field(default_factory=list)
+    skill_calls: list[AgentSkillCall] = Field(default_factory=list)
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)

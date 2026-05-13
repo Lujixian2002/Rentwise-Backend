@@ -3,6 +3,8 @@ from __future__ import annotations
 from app.skills.base import Skill
 from app.skills.community_report_skill import CommunityReportSkill
 from app.skills.community_search_skill import CommunitySearchSkill
+from app.skills.preference_extraction_skill import PreferenceExtractionSkill
+from app.skills.web_research_skill import WebResearchSkill
 
 
 class SkillRegistry:
@@ -24,5 +26,7 @@ def default_skill_registry() -> SkillRegistry:
         skills=[
             CommunitySearchSkill(),
             CommunityReportSkill(),
+            WebResearchSkill(),
+            PreferenceExtractionSkill(),
         ]
     )
