@@ -1,57 +1,160 @@
 # RentWise Backend
 
-FastAPI service that powers the RentWise neighborhood comparison tool.
+RentWise Backend is the FastAPI service for the RentWise neighborhood comparison tool. It provides community profiles, cached neighborhood metrics, renter preference recommendations, side-by-side comparisons, review data, and AI-assisted community reports for Irvine, CA rental communities.
 
-- Serves community profiles, metrics, and side-by-side comparisons through REST APIs
-- Fetches external signals (crime, commute, noise, grocery density, nightlights, rent) with a cache-first refresh flow
-- Ingests YouTube comments and Google Maps reviews for each community
-- Exposes an OpenAI-powered chat endpoint that extracts user preference weights from a natural-language conversation
+Frontend repository: https://github.com/CyberObservers/Rentwise-Frontend
+
+Backend repository: https://github.com/Lujixian2002/rentwise-backend
+
+## Team Members
+
+| Name | Github |
+| --- | --- |
+| Kefei Wu | wukef2425 |
+| Jason Wu | CyberObservers |
+| Haofeng Li | noelistheone |
+| Jixian Lu | Lujixian2002 |
+
+## Features Implemented
+
+- REST APIs for communities, metrics, reviews, recommendations, comparisons, chat, and community reports.
+- Cache-first metric refresh flow for rent, commute, grocery density, crime, noise, night activity, parking, and review signals.
+- PostgreSQL persistence for communities, metrics, dimension scores, comparison results, and review posts.
+- Rule-based scoring for safety, transit, convenience, parking, and environment.
+- Weighted recommendation ranking based on user preference weights from the frontend or AI chat.
+- Side-by-side community comparison with structured score differences and optional OpenAI-generated summary text.
+- Community insight generation from metrics, review excerpts, and optional web-grounded context.
+- Agent endpoints for community search, community discovery, community intake, community reports, web research, and preference extraction.
+- Review ingestion and filtering support for YouTube and Google Maps review data.
+- Seeded SQL snapshot path for quickly reproducing a working local database.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Frontend[RentWise Frontend<br/>React + Vite] --> Proxy[Vite /api proxy<br/>or VITE_API_BASE_URL]
+  Proxy --> FastAPI[RentWise Backend<br/>FastAPI app/main.py]
+
+  FastAPI --> Routes[API Routes<br/>health, communities, recommend,<br/>compare, chat, agent]
+
+  Routes --> CommunitySvc[Community APIs<br/>list/detail/reviews/insight]
+  Routes --> RecommendSvc[Recommend Service<br/>weighted ranking]
+  Routes --> CompareSvc[Compare Service<br/>structured diff + summary]
+  Routes --> AgentLayer[RentWiseAgent<br/>intent routing + skills]
+
+  CommunitySvc --> Ingest[Ingest Service<br/>cache-first metrics and reviews]
+  RecommendSvc --> Scoring[Scoring Service<br/>dimension scores + normalized weights]
+  CompareSvc --> Scoring
+  CommunitySvc --> Insight[Insight Service<br/>metric and review commentary]
+
+  AgentLayer --> Skills[Skills<br/>community search, community report,<br/>web research, preference extraction]
+  Skills --> Scoring
+  Skills --> Database[(PostgreSQL)]
+
+  Ingest --> Fetchers[Fetcher Integrations]
+  Fetchers --> OSM[OpenStreetMap / Overpass<br/>grocery, noise proxy, parking]
+  Fetchers --> Maps[Google Maps / OpenRouteService<br/>commute and place data]
+  Fetchers --> YouTube[YouTube<br/>video comments]
+  Fetchers --> Crime[CrimeGrade / Crimeometer<br/>local crime fallback]
+  Fetchers --> VIIRS[NASA VIIRS local raster<br/>night activity]
+  Fetchers --> Zillow[Zillow ZORI CSV<br/>rent baseline]
+
+  CommunitySvc --> Database
+  RecommendSvc --> Database
+  CompareSvc --> Database
+  Ingest --> Database
+  Insight --> Database
+
+  Database --> Tables[community<br/>community_metrics<br/>dimension_score<br/>community_comparison<br/>review_post]
+
+  AgentLayer --> OpenAI[OpenAI<br/>chat routing, preference extraction,<br/>reports, summaries, web search]
+  CompareSvc --> OpenAI
+  Insight --> OpenAI
+```
+
+The backend is organized as a layered FastAPI application. `app/main.py` creates the app, configures CORS for local frontend ports, and registers route modules. Route handlers in `app/api/routes` keep request handling thin and delegate to service modules under `app/services`.
+
+The database layer uses SQLAlchemy models and CRUD helpers under `app/db`. Community data is stored in PostgreSQL tables for base community records, metrics, computed dimension scores, saved comparison results, and review posts. The ingest service refreshes stale metrics using external fetchers when data is missing or expired, then stores the result for later frontend calls.
+
+AI features are optional but enabled when `OPENAI_API_KEY` is configured. The regular `/chat` endpoint uses a chat service, while `/agent/*` routes use `RentWiseAgent`, `chat_agent.py`, and reusable skills to route user intent to community search, report generation, web research, or preference extraction.
+
+Key backend files:
+
+```text
+app/
+  main.py                  # FastAPI app, CORS, route registration
+  api/routes/
+    health.py              # service health endpoints
+    communities.py         # community list/detail/reviews/insight APIs
+    recommend.py           # weighted recommendation endpoint
+    compare.py             # side-by-side comparison endpoint
+    chat.py                # direct LLM preference chat endpoint
+    agent.py               # agent search/report/chat/discovery endpoints
+  services/
+    ingest_service.py      # cache-first data refresh pipeline
+    scoring_service.py     # score formulas and weight normalization
+    recommend_service.py   # community ranking
+    compare_service.py     # structured diffs and comparison summaries
+    insight_service.py     # insight cards and web-grounded context
+    review_filter_service.py
+    fetchers/              # external data integrations
+  agents/
+    rentwise_agent.py      # agent orchestration
+    chat_agent.py          # intent routing to skills
+  skills/                  # community search/report/web/preference skills
+  db/
+    models.py              # SQLAlchemy table models
+    crud.py                # database read/write helpers
+    database.py            # engine/session setup
+  schemas/                 # Pydantic request/response models
+scripts/                   # seed and fetch scripts
+sql/                       # schema and seeded data snapshots
+docs/data_sources/         # source catalog and schemas
+```
+
+Primary request flow:
+
+1. The frontend calls backend APIs through `/api` in local development.
+2. FastAPI routes validate requests with Pydantic schemas.
+3. Service modules load cached database records and refresh stale data when needed.
+4. Scoring functions compute dimension scores and weighted recommendation totals.
+5. Optional OpenAI calls generate natural-language chat replies, insights, reports, and comparison summaries.
+6. Responses are returned as typed JSON consumed by the frontend.
 
 ## API
 
+Interactive API docs are available after startup:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Main endpoints:
+
 | Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/communities` | List all cached communities + metrics |
+| --- | --- | --- |
 | `GET` | `/` | Service status |
 | `GET` | `/health` | Health check |
-| `GET` | `/communities/{community_id}` | Community profile + cached metrics |
-| `GET` | `/communities/{community_id}/reviews` | YouTube + Google Maps reviews |
-| `POST` | `/communities/{community_id}/insight` | LLM-generated 5-dimension commentary + optional web-grounded community info |
-| `POST` | `/compare` | Compare two communities with rule-based scoring plus LLM-generated summary/tradeoffs |
-| `POST` | `/chat` | LLM chat that extracts preference weights |
-| `POST` | `/recommend` | Rank communities using LLM-derived preference weights |
+| `GET` | `/communities` | List cached communities and metrics |
+| `GET` | `/communities/{community_id}` | Community profile and metrics |
+| `GET` | `/communities/{community_id}/reviews` | YouTube / Google Maps review posts |
+| `GET` | `/communities/review-keyword-config` | Keyword configuration for frontend review filtering |
+| `POST` | `/communities/{community_id}/insight` | Metric, review, and optional web-grounded insight cards |
+| `POST` | `/recommend` | Rank communities from preference weights |
+| `POST` | `/compare` | Compare two communities with structured scores and summary |
+| `POST` | `/chat` | Direct LLM chat for preference extraction |
+| `POST` | `/agent/chat` | Agent-routed chat for preference extraction, search, report, or web research |
+| `POST` | `/agent/community-report` | Generate detailed community report |
+| `POST` | `/agent/community-search` | Search for a community by name/city/state |
+| `POST` | `/agent/community-discovery` | Discover and inspect a community using agent workflow |
+| `POST` | `/agent/community-intake` | Create or resolve a community record for intake |
 
-Examples:
+Example requests:
 
 ```bash
 curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/communities
 curl http://127.0.0.1:8000/communities/irvine-spectrum
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/compare \
-  -H "Content-Type: application/json" \
-  -d '{
-    "community_a_id": "irvine-spectrum",
-    "community_b_id": "woodbridge",
-    "weights": { "Safety": 1.2, "Transit": 1.5 }
-  }'
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"I care about safety and parking"}]}'
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/communities/woodbridge/insight \
-  -H "Content-Type: application/json" \
-  -d '{
-    "max_reviews": 20,
-    "include_web_info": true
-  }'
 ```
 
 ```bash
@@ -69,26 +172,115 @@ curl -X POST http://127.0.0.1:8000/recommend \
   }'
 ```
 
-Interactive docs: `http://127.0.0.1:8000/docs`
+```bash
+curl -X POST http://127.0.0.1:8000/compare \
+  -H "Content-Type: application/json" \
+  -d '{
+    "community_a_id": "irvine-spectrum",
+    "community_b_id": "woodbridge",
+    "weights": {
+      "safety": 30,
+      "transit": 25,
+      "convenience": 15,
+      "parking": 20,
+      "environment": 10
+    }
+  }'
+```
 
-## Quick Start
+```bash
+curl -X POST http://127.0.0.1:8000/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"I care about safety and parking"}]}'
+```
+
+## Tech Stack
+
+- Python 3.11
+- FastAPI
+- Uvicorn
+- SQLAlchemy 2
+- PostgreSQL 16
+- Pydantic 2 and pydantic-settings
+- OpenAI Python SDK
+- Docker / Docker Compose
+- External data integrations: OpenStreetMap / Overpass, Google Maps, OpenRouteService, YouTube, CrimeGrade / Crimeometer, NASA VIIRS, Zillow ZORI CSV
+
+## Setup Instructions
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Lujixian2002/rentwise-backend.git
+cd rentwise-backend
+```
+
+### 2. Create and activate a virtual environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
-python -m scripts.fetch_irvine_sample   # creates tables, seeds, fetches sample metrics
-uvicorn app.main:app --reload --port 8000
 ```
 
-Database is configured through `DATABASE_URL` in `.env` (or `.env.local`, which takes precedence and is gitignored — use it for personal API keys).
+### 4. Create environment file
 
-> **Note**: `fetch_irvine_sample` calls live external APIs (OSM Overpass, Google Maps, YouTube, ZORI CSV, VIIRS raster) and takes ~5–10 minutes. It also needs assets in `data/` (Zillow ZORI CSV, VIIRS night-lights tile) and the corresponding API keys to fully populate metrics. If you just want to spin up the project against the same dataset the maintainer is using, use the SQL dump path below instead.
+Create `.env.local` in the backend repository root:
 
-## Docker Compose
+```env
+DATABASE_URL=postgresql://rentwise_user:rentwise_password@localhost:5432/rentwise
+APP_ENV=dev
+METRICS_TTL_HOURS=24
 
-Run the backend with Postgres from the project root:
+# Optional, enables AI-generated chat, summaries, insights, reports, and filtering.
+OPENAI_API_KEY=your_openai_api_key
+
+# Optional, enables richer live data refreshes.
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+OPENROUTESERVICE_API_KEY=your_openrouteservice_api_key
+YOUTUBE_API_KEY=your_youtube_api_key
+CRIMEOMETER_API_KEY=your_crimeometer_api_key
+NASA_EARTHDATA_TOKEN=your_nasa_earthdata_token
+```
+
+Configuration variables:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | SQLAlchemy URL for PostgreSQL |
+| `APP_ENV` | No | Environment label |
+| `METRICS_TTL_HOURS` | No | Cache TTL for community metrics |
+| `OPENAI_API_KEY` | No | Enables LLM chat, comparison copy, insights, reports, web research, and review filtering |
+| `OPENAI_WEB_SEARCH_MODEL` | No | Model override for web-grounded community info |
+| `OPENAI_WEB_SEARCH_TIMEOUT_SEC` | No | Timeout for web-grounded community info |
+| `OPENAI_REVIEW_FILTER_MODEL` | No | Model for AI review filtering |
+| `GOOGLE_MAPS_API_KEY` | No | Commute times and place review signals |
+| `OPENROUTESERVICE_API_KEY` | No | Commute fallback |
+| `YOUTUBE_API_KEY` | No | YouTube comment ingestion |
+| `CRIMEOMETER_API_KEY` | No | Crime rate API |
+| `NASA_EARTHDATA_TOKEN` | No | VIIRS night-activity support |
+
+Missing optional API keys are handled gracefully where possible. Related fetchers return `None` or fall back to cached/local data.
+
+## How to Run Locally
+
+### Option A: Docker Compose
+
+Run backend and PostgreSQL together:
 
 ```bash
 docker compose -f docker-compose.backend.yml up --build
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000/docs
 ```
 
 Stop the stack:
@@ -97,84 +289,132 @@ Stop the stack:
 docker compose -f docker-compose.backend.yml down
 ```
 
-## Reproducing the seeded dataset (fast path)
+### Option B: Local Python + local PostgreSQL
 
-The `sql/` folder ships pre-exported snapshots so collaborators can boot a working DB in seconds without running any fetchers:
-
-| File | Contents |
-|---|---|
-| `sql/1_create_tables.sql` | Schema (7 tables) |
-| `sql/2_insert_statements.sql` | Data — 27 communities, metrics, dimension scores, review posts |
-
-Steps:
+Start PostgreSQL, then import the seeded dataset:
 
 ```bash
-# 1. Start a Postgres container that matches the expected DATABASE_URL
 docker run -d --name rentwise-postgres \
   -e POSTGRES_DB=rentwise \
   -e POSTGRES_USER=rentwise_user \
-  -e POSTGRES_PASSWORD=ddbswdjx \
+  -e POSTGRES_PASSWORD=rentwise_password \
   -p 5432:5432 \
   postgres:16
+```
 
-# 2. Import schema then data (chained on stdin so it's one command)
+```bash
 cat sql/1_create_tables.sql sql/2_insert_statements.sql | \
-  docker exec -i -e PGPASSWORD=ddbswdjx rentwise-postgres \
+  docker exec -i -e PGPASSWORD=rentwise_password rentwise-postgres \
   psql -U rentwise_user -d rentwise
+```
 
-# 3. Verify
-docker exec -e PGPASSWORD=ddbswdjx rentwise-postgres \
-  psql -U rentwise_user -d rentwise -c "SELECT COUNT(*) FROM community;"
-# → expect 27
+Start the API:
 
-# 4. Boot the backend against the imported DB
-echo 'DATABASE_URL=postgresql://rentwise_user:ddbswdjx@localhost:5432/rentwise' >> .env.local
+```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-To regenerate `sql/2_insert_statements.sql` after running fetchers locally:
+Verify:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/communities
+```
+
+## Seeded Dataset
+
+The `sql/` folder includes a fast path for reproducing the shared project dataset without calling live external APIs.
+
+| File | Contents |
+| --- | --- |
+| `sql/1_create_tables.sql` | Database schema |
+| `sql/2_insert_statements.sql` | Seeded communities, metrics, dimension scores, and review posts |
+| `sql/3_add_review_filter_cache.sql` | Review filter cache columns |
+| `sql/test.sql` | Manual SQL checks |
+
+To regenerate `sql/2_insert_statements.sql` after refreshing local data:
 
 ```bash
 PYTHONPATH=. python sql/export_share_sql.py
 ```
 
-## Configuration
+## Data Refresh
 
-Create a `.env` file in this directory. `DATABASE_URL` is required. The remaining keys are optional — missing keys cause the corresponding fetcher to return `None` gracefully.
+For a full live refresh, run:
 
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | Required SQLAlchemy URL for the application database |
-| `APP_ENV` | Environment label |
-| `METRICS_TTL_HOURS` | Cache TTL for community metrics |
-| `OPENAI_API_KEY` | Enables LLM-powered endpoints including `/chat`, `/compare`, and `/communities/{community_id}/insight` |
-| `OPENAI_WEB_SEARCH_MODEL` | Optional model override for the web-search portion of `/communities/{community_id}/insight` |
-| `OPENAI_WEB_SEARCH_TIMEOUT_SEC` | Timeout for the web-search portion of `/communities/{community_id}/insight` |
-| `GOOGLE_MAPS_API_KEY` | Commute times + place reviews |
-| `OPENROUTESERVICE_API_KEY` | Commute fallback |
-| `YOUTUBE_API_KEY` | YouTube comment ingestion |
-| `CRIMEOMETER_API_KEY` | Crime rate (per-100k) |
-| `NASA_EARTHDATA_TOKEN` | VIIRS night-activity index |
-| `YELP_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `SOCRATA_APP_TOKEN` | Reserved for future fetchers |
+```bash
+python -m scripts.fetch_irvine_sample
+```
 
-## Scripts
+This creates tables, seeds base communities, and fetches sample metrics. It can take several minutes because it may call external APIs and read local data assets.
 
-- `python -m scripts.seed_communities` — seed base community records
-- `python -m scripts.fetch_irvine_sample` — create tables, seed communities, then fetch sample metrics
+Local assets expected by some fetchers:
 
-## Project Structure
+- Zillow ZORI CSV data under `data/`
+- VIIRS night-light raster configured by `VIIRS_LOCAL_RADIANCE_TIF`
+
+## Testing / Verification
+
+There is no full automated test suite in this repository yet. Use these checks before final submission or demo:
+
+```bash
+python -m compileall app scripts
+```
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/communities
+```
+
+Recommended manual verification:
+
+1. Start PostgreSQL and the backend.
+2. Load the seeded SQL files.
+3. Open `http://127.0.0.1:8000/docs`.
+4. Confirm `GET /health` returns an OK response.
+5. Confirm `GET /communities` returns seeded communities.
+6. Confirm `POST /recommend` returns ranked communities.
+7. Confirm `POST /compare` returns structured score differences.
+8. Confirm `GET /communities/{community_id}/reviews` returns review posts for seeded communities.
+9. If `OPENAI_API_KEY` is configured, confirm `/agent/chat`, `/agent/community-report`, and `/communities/{community_id}/insight` return AI-assisted responses.
+
+## Deployment / Local-Only Status
+
+Current status: backend is configured for local development and Docker Compose execution.
+
+- Local FastAPI server: supported.
+- Local Docker Compose with PostgreSQL: supported.
+- Seeded local database reproduction: supported.
+- Hosted deployment URL: TODO, add if deployed.
+- Frontend integration: supported through Vite `/api` proxy or `VITE_API_BASE_URL`.
+
+## Demo Video
+
+TODO: Add final demo video link.
+
+Suggested format:
 
 ```text
-app/
-  api/routes/      # health, communities, compare, chat
-  services/        # ingest, scoring, compare, community_resolver, chat_service
-  services/fetchers/   # google_maps, google_maps_reviews, youtube, irvine_crime,
-                       # nasa_viirs, openrouteservice, overpass_osm, zillow_zori, geocoding
-  db/              # SQLAlchemy models, session, CRUD
-  schemas/         # Pydantic request/response models
-  core/            # config, logging
-  utils/           # small helpers
-scripts/           # seed/fetch helpers
-sql/               # shared SQL files
-data/              # local raster / CSV assets (gitignored)
+Demo video: https://...
+```
+
+## Known Issues / Future Work
+
+- Full live data refresh depends on optional external API keys and local data assets.
+- OpenAI-powered endpoints require `OPENAI_API_KEY`; fallback behavior exists for several flows but AI-generated text will be limited without it.
+- Docker Compose starts an empty PostgreSQL database; import the seeded SQL snapshot for a ready-to-demo dataset.
+- Hosted deployment URL and demo video link still need to be added before final submission.
+- Future work: add automated API tests for route responses and scoring behavior.
+- Future work: add migration tooling instead of relying on raw SQL snapshots.
+- Future work: add scheduled refresh jobs for metrics and reviews.
+
+## Useful Commands
+
+```bash
+uvicorn app.main:app --reload --port 8000      # Start local API server
+docker compose -f docker-compose.backend.yml up --build
+docker compose -f docker-compose.backend.yml down
+python -m scripts.seed_communities             # Seed base community records
+python -m scripts.fetch_irvine_sample          # Fetch sample metrics and reviews
+PYTHONPATH=. python sql/export_share_sql.py    # Export seeded SQL snapshot
 ```
