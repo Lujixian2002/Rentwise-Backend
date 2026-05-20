@@ -1,4 +1,6 @@
 import json
+import re
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -80,6 +82,7 @@ async def get_community_reviews(
             author_name=r.author_name,
             like_count=r.like_count,
             parent_id=r.parent_id,
+            source_url=_with_text_fragment(r.url, r.body_text),
         )
         for r in reviews
     ]
@@ -141,6 +144,21 @@ def _build_detail_response(
         )
 
     return CommunityDetailResponse(community=community_payload, metrics=metrics_payload)
+
+
+def _with_text_fragment(url: str | None, text: str | None) -> str | None:
+    if not url:
+        return None
+    fragment_text = _text_fragment_phrase(text)
+    if not fragment_text:
+        return url
+    return f"{url}#:~:text={quote(fragment_text, safe='')}"
+
+
+def _text_fragment_phrase(text: str | None) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9\s.,!?'\-]", " ", text or "")
+    cleaned = " ".join(cleaned.split())
+    return cleaned.strip()
 
 
 def _metric_commute_minutes(metrics) -> float | None:

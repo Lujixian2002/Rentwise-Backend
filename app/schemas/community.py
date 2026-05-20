@@ -42,6 +42,7 @@ class ReviewResponse(BaseModel):
     author_name: str | None = None
     like_count: float | None = None
     parent_id: str | None = None
+    source_url: str | None = None
 
 
 class ReviewKeywordConfigResponse(BaseModel):

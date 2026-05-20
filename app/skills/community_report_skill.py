@@ -4,6 +4,7 @@ import html
 import json
 import re
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import HTTPException
 from openai import AsyncOpenAI
@@ -133,9 +134,15 @@ class CommunityReportSkill(Skill):
         summary = _clean_text(generated.get("summary")) or _default_summary(
             community.name
         )
+        review_sources = _report_reviews(reviews)
         html_fragment = _sanitize_html_fragment(generated.get("html_fragment"))
         if not html_fragment:
-            html_fragment = _render_html_fragment(title, summary, sections)
+            html_fragment = _render_html_fragment(
+                title,
+                summary,
+                sections,
+                review_sources=review_sources,
+            )
 
         trace.append(
             AgentTraceStep(
@@ -153,7 +160,7 @@ class CommunityReportSkill(Skill):
             location=_location_payload(community),
             metrics=CommunityReportMetricSnapshot(**_metrics_payload(metrics)),
             dimensions=_report_dimensions(dimension_scores),
-            reviews=_report_reviews(reviews),
+            reviews=review_sources,
             user_preferences=preferences,
             sections=sections,
             html_fragment=html_fragment,
@@ -223,7 +230,6 @@ def _fallback_report(
         "title": title,
         "summary": summary,
         "sections": [section.model_dump() for section in sections],
-        "html_fragment": _render_html_fragment(title, summary, sections),
     }
 
 
@@ -338,6 +344,7 @@ def _render_html_fragment(
     title: str,
     summary: str,
     sections: list[CommunityReportSection],
+    review_sources: list[CommunityReportReviewSource] | None = None,
 ) -> str:
     parts = [
         '<section class="community-report">',
@@ -353,6 +360,24 @@ def _render_html_fragment(
             for item in section.items:
                 parts.append(f"<li>{html.escape(item)}</li>")
             parts.append("</ul>")
+        parts.append("</section>")
+    linked_reviews = [review for review in review_sources or [] if review.source_url]
+    if linked_reviews:
+        parts.append('<section data-section="review_sources">')
+        parts.append("<h2>Review Sources</h2>")
+        parts.append("<ul>")
+        for index, review in enumerate(linked_reviews, start=1):
+            label_parts = [f"Comment {index}"]
+            if review.platform:
+                label_parts.append(review.platform.title())
+            if review.author_name:
+                label_parts.append(review.author_name)
+            label = " - ".join(label_parts)
+            parts.append(
+                f'<li><a href="{html.escape(review.source_url, quote=True)}" '
+                f'target="_blank" rel="noopener noreferrer">{html.escape(label)}</a></li>'
+            )
+        parts.append("</ul>")
         parts.append("</section>")
     parts.append("</section>")
     return "".join(parts)
@@ -440,29 +465,45 @@ def _report_reviews(reviews) -> list[CommunityReportReviewSource]:
     for review in reviews:
         if not review.body_text:
             continue
+        body_text = _trim(review.body_text, limit=320)
         payload.append(
             CommunityReportReviewSource(
                 platform=review.platform,
                 author_name=review.author_name,
-                body_text=_trim(review.body_text, limit=320),
+                body_text=body_text,
                 posted_at=review.posted_at.isoformat() if review.posted_at else None,
-                source_url=_review_source_url(review),
+                source_url=_review_source_url(review, body_text),
             )
         )
     return payload
 
 
-def _review_source_url(review) -> str | None:
+def _review_source_url(review, display_text: str | None = None) -> str | None:
+    url = None
     if review.url:
-        return review.url
-    if review.platform == "youtube":
+        url = review.url
+    elif review.platform == "youtube":
         video_id = _extract_youtube_video_id(review.external_id, review.parent_id)
         if video_id:
             url = f"https://www.youtube.com/watch?v={video_id}"
             if review.external_id:
-                return f"{url}&lc={review.external_id}"
-            return url
-    return None
+                url = f"{url}&lc={review.external_id}"
+    return _with_text_fragment(url, display_text if display_text is not None else review.body_text)
+
+
+def _with_text_fragment(url: str | None, text: str | None) -> str | None:
+    if not url:
+        return None
+    fragment_text = _text_fragment_phrase(text)
+    if not fragment_text:
+        return url
+    return f"{url}#:~:text={quote(fragment_text, safe='')}"
+
+
+def _text_fragment_phrase(text: str | None) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9\s.,!?'\-]", " ", text or "")
+    cleaned = " ".join(cleaned.split())
+    return cleaned.strip()
 
 
 def _extract_youtube_video_id(*values) -> str | None:
