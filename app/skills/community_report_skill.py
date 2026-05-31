@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import re
 from typing import Any
 from urllib.parse import quote
@@ -22,6 +23,16 @@ from app.schemas.agent import (
 from app.services.scoring_service import PREFERENCE_DIMENSIONS
 from app.services.ingest_service import ensure_reviews_fresh
 from app.skills.base import Skill, SkillContext
+
+logger = logging.getLogger(__name__)
+
+_DIMENSION_ALIASES = {
+    "safety": "safety",
+    "transit": "transit",
+    "convenience": "convenience",
+    "parking": "parking",
+    "environment": "environment",
+}
 
 _REPORT_SYSTEM_PROMPT = """You generate personalized single-community report content for RentWise.
 Use only the provided community data, metrics, dimension scores, reviews, and user preferences.
@@ -92,7 +103,7 @@ class CommunityReportSkill(Skill):
             )
         ]
 
-        generated = await _generate_report_with_llm(
+        generated, generation_error = await _generate_report_with_llm(
             context=context,
             community=community,
             metrics=metrics,
@@ -109,7 +120,10 @@ class CommunityReportSkill(Skill):
                     if generated
                     else "Used deterministic fallback report content."
                 ),
-                detail={"llm_enabled": bool(context.settings.openai_api_key)},
+                detail={
+                    "llm_enabled": bool(context.settings.openai_api_key),
+                    "fallback_reason": generation_error,
+                },
             )
         )
 
@@ -135,6 +149,7 @@ class CommunityReportSkill(Skill):
             community.name
         )
         review_sources = _report_reviews(reviews)
+        sections = _with_review_source_links(sections, review_sources, metrics)
         html_fragment = _sanitize_html_fragment(generated.get("html_fragment"))
         if not html_fragment:
             html_fragment = _render_html_fragment(
@@ -175,11 +190,15 @@ async def _generate_report_with_llm(
     dimension_scores,
     reviews,
     preferences: dict[str, float],
-) -> dict | None:
+) -> tuple[dict | None, str | None]:
     if not context.settings.openai_api_key:
-        return None
+        return None, "missing_openai_api_key"
 
-    client = AsyncOpenAI(api_key=context.settings.openai_api_key, timeout=30.0)
+    client = AsyncOpenAI(
+        api_key=context.settings.openai_api_key,
+        timeout=30.0,
+        max_retries=0,
+    )
     prompt = json.dumps(
         {
             "community": _community_payload(community),
@@ -212,9 +231,15 @@ async def _generate_report_with_llm(
             max_tokens=1400,
         )
         raw = completion.choices[0].message.content or ""
-        return json.loads(raw)
-    except Exception:
-        return None
+        return json.loads(raw), None
+    except Exception as exc:
+        reason = f"{type(exc).__name__}: {_trim(str(exc), limit=180)}"
+        logger.warning(
+            "Community report LLM generation failed for %s: %s",
+            getattr(community, "community_id", "unknown"),
+            reason,
+        )
+        return None, reason
 
 
 def _fallback_report(
@@ -239,7 +264,7 @@ def _fallback_sections(
     dimension_scores,
     preferences: dict[str, float],
 ) -> list[CommunityReportSection]:
-    dimensions = _dimension_payload(dimension_scores)
+    dimensions = _preference_dimension_payload(dimension_scores)
     missing = [
         dimension
         for dimension in PREFERENCE_DIMENSIONS
@@ -254,7 +279,7 @@ def _fallback_sections(
             None,
         )
         fit_items.append(
-            f"{dimension}: preference weight {weight:g}"
+            f"{dimension.title()}: preference weight {weight:g}"
             + (f", score {score:g}" if score is not None else ", score unavailable")
         )
 
@@ -273,7 +298,7 @@ def _fallback_sections(
             type="dimensions",
             title="Five Dimensions",
             items=[
-                f"{item['dimension']}: {item['score_0_100'] if item['score_0_100'] is not None else 'N/A'} - {item['summary']}"
+                f"{item['dimension'].title()}: {item['score_0_100'] if item['score_0_100'] is not None else 'N/A'} - {item['summary']}"
                 for item in dimensions
             ],
         ),
@@ -283,7 +308,7 @@ def _fallback_sections(
             items=(
                 [f"Missing or low-confidence data for: {', '.join(missing)}."]
                 if missing
-                else ["No missing dimension scores were detected in the current data."]
+                else ["All five preference dimensions have current RentWise scores."]
             ),
         ),
         CommunityReportSection(
@@ -297,13 +322,87 @@ def _fallback_sections(
         ),
         CommunityReportSection(
             type="sources",
-            title="Sources And Confidence",
-            items=[
-                f"Overall metrics confidence: {getattr(metrics, 'overall_confidence', None) if metrics else 'unavailable'}",
-                "Scores are generated from RentWise structured metrics when available.",
-            ],
+            title="Sources",
+            items=[],
         ),
     ]
+
+
+def _with_review_source_links(
+    sections: list[CommunityReportSection],
+    review_sources: list[CommunityReportReviewSource],
+    metrics,
+) -> list[CommunityReportSection]:
+    linked_items = _review_source_link_items(review_sources)
+    if not linked_items:
+        return sections
+
+    next_sections = list(sections)
+    source_index = next(
+        (
+            index
+            for index, section in enumerate(next_sections)
+            if section.type == "sources"
+        ),
+        None,
+    )
+    if source_index is None:
+        next_sections.append(
+            CommunityReportSection(
+                type="sources",
+                title="Sources",
+                items=linked_items,
+            )
+        )
+        return next_sections
+
+    source_section = next_sections[source_index]
+    existing_items = [
+        item
+        for item in source_section.items
+        if "overall metrics confidence:" not in item.lower()
+        and item != "Scores are generated from RentWise structured metrics when available."
+    ]
+    existing_urls = {
+        match.group(1)
+        for item in existing_items
+        for match in [re.search(r"\]\((https?://[^)]+)\)\s*$", item)]
+        if match
+    }
+    new_items = [
+        item
+        for item in linked_items
+        if (match := re.search(r"\]\((https?://[^)]+)\)\s*$", item))
+        and match.group(1) not in existing_urls
+    ]
+    if not new_items:
+        return next_sections
+
+    next_sections[source_index] = CommunityReportSection(
+        type=source_section.type,
+        title="Sources",
+        content=source_section.content,
+        items=[*existing_items, *new_items],
+    )
+    return next_sections
+
+
+def _review_source_link_items(
+    review_sources: list[CommunityReportReviewSource],
+    limit: int = 5,
+) -> list[str]:
+    items = []
+    for review in review_sources:
+        if not review.source_url:
+            continue
+        platform = (review.platform or "Review").title()
+        author = review.author_name or "source"
+        body = _trim(review.body_text, limit=130).replace('"', "'")
+        label = "Open on YouTube" if review.platform == "youtube" else "Open source"
+        items.append(f'{platform} by {author}: "{body}" [{label}]({review.source_url})')
+        if len(items) >= limit:
+            break
+    return items
 
 
 def _sanitize_sections(payload) -> list[CommunityReportSection]:
@@ -444,14 +543,32 @@ def _dimension_payload(dimension_scores) -> list[dict]:
     ]
 
 
+def _preference_dimension_payload(dimension_scores) -> list[dict]:
+    payload_by_dimension = {}
+    for item in _dimension_payload(dimension_scores):
+        dimension = _normalize_dimension(item.get("dimension"))
+        if dimension not in PREFERENCE_DIMENSIONS:
+            continue
+        payload_by_dimension[dimension] = {
+            **item,
+            "dimension": dimension,
+        }
+    return [
+        payload_by_dimension[dimension]
+        for dimension in PREFERENCE_DIMENSIONS
+        if dimension in payload_by_dimension
+    ]
+
+
 def _report_dimensions(dimension_scores) -> list[CommunityReportDimension]:
     dimensions = []
     for score in dimension_scores:
-        if score.dimension not in PREFERENCE_DIMENSIONS:
+        dimension = _normalize_dimension(score.dimension)
+        if dimension not in PREFERENCE_DIMENSIONS:
             continue
         dimensions.append(
             CommunityReportDimension(
-                dimension=score.dimension,
+                dimension=dimension,
                 score_0_100=score.score_0_100,
                 summary=score.summary,
                 data_origin=score.data_origin,
@@ -530,6 +647,10 @@ def _clean_preferences(value) -> dict[str, float]:
         except (TypeError, ValueError):
             continue
     return preferences
+
+
+def _normalize_dimension(value) -> str:
+    return _DIMENSION_ALIASES.get(str(value or "").strip().lower(), "")
 
 
 def _clean_text(value) -> str | None:
