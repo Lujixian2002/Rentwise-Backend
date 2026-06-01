@@ -10,7 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.crud import ensure_review_filter_cache_columns
 from app.db.models import ReviewPost
 
 
@@ -96,8 +95,6 @@ async def filter_reviews_for_community_ui(
     review_list = list(reviews)
     if not review_list:
         return review_list
-
-    ensure_review_filter_cache_columns(db)
 
     if not settings.openai_api_key:
         return _rule_based_filter(review_list)

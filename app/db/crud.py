@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session, load_only
 
 from app.db.models import (
@@ -13,9 +13,6 @@ from app.db.models import (
     DimensionScore,
     ReviewPost,
 )
-
-_review_filter_cache_columns_ready = False
-
 
 def get_community(db: Session, community_id: str) -> Community | None:
     stmt = select(Community).where(Community.community_id == community_id)
@@ -182,7 +179,6 @@ def get_dimension_scores(db: Session, community_id: str) -> list[DimensionScore]
 def get_reviews_by_community(
     db: Session, community_id: str, limit: int = 50
 ) -> list[ReviewPost]:
-    ensure_review_filter_cache_columns(db)
     stmt = (
         select(ReviewPost)
         .where(ReviewPost.community_id == community_id)
@@ -190,30 +186,6 @@ def get_reviews_by_community(
         .limit(limit)
     )
     return list(db.execute(stmt).scalars().all())
-
-
-def ensure_review_filter_cache_columns(db: Session) -> None:
-    global _review_filter_cache_columns_ready
-    if _review_filter_cache_columns_ready:
-        return
-
-    statements = (
-        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_keep boolean",
-        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_category varchar(32)",
-        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_reason text",
-        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_model varchar(64)",
-        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_prompt_version varchar(32)",
-        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_text_hash varchar(64)",
-        "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_checked_at timestamp",
-        (
-            "CREATE INDEX IF NOT EXISTS ix_review_post_ai_filter_hash "
-            "ON review_post(ai_filter_text_hash, ai_filter_model, ai_filter_prompt_version)"
-        ),
-    )
-    for statement in statements:
-        db.execute(text(statement))
-    db.commit()
-    _review_filter_cache_columns_ready = True
 
 
 def get_reviews_count(db: Session, community_id: str) -> int:
@@ -275,7 +247,6 @@ def upsert_review_posts(
     incoming_ids = [r["id"] for r in reviews]
     if not incoming_ids:
         return 0
-    ensure_review_filter_cache_columns(db)
 
     stmt = select(ReviewPost).where(
         ReviewPost.community_id == community_id,
