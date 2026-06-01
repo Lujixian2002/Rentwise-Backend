@@ -103,6 +103,8 @@ class CommunityReportSkill(Skill):
             )
         ]
 
+        context.db.commit()
+
         generated, generation_error = await _generate_report_with_llm(
             context=context,
             community=community,

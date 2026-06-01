@@ -14,6 +14,8 @@ from app.db.models import (
     ReviewPost,
 )
 
+_review_filter_cache_columns_ready = False
+
 
 def get_community(db: Session, community_id: str) -> Community | None:
     stmt = select(Community).where(Community.community_id == community_id)
@@ -191,6 +193,10 @@ def get_reviews_by_community(
 
 
 def ensure_review_filter_cache_columns(db: Session) -> None:
+    global _review_filter_cache_columns_ready
+    if _review_filter_cache_columns_ready:
+        return
+
     statements = (
         "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_keep boolean",
         "ALTER TABLE review_post ADD COLUMN IF NOT EXISTS ai_filter_category varchar(32)",
@@ -207,6 +213,7 @@ def ensure_review_filter_cache_columns(db: Session) -> None:
     for statement in statements:
         db.execute(text(statement))
     db.commit()
+    _review_filter_cache_columns_ready = True
 
 
 def get_reviews_count(db: Session, community_id: str) -> int:
