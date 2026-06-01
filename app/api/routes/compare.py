@@ -6,7 +6,6 @@ from app.core.config import Settings, get_settings
 from app.schemas.comparison import CompareRequest, CompareResponse
 from app.services.compare_service import compare_communities
 from app.services.community_resolver import resolve_community
-from app.services.ingest_service import ensure_metrics_fresh
 
 router = APIRouter()
 
@@ -31,9 +30,6 @@ async def compare(
 
     if community_a.community_id == community_b.community_id:
         raise HTTPException(status_code=400, detail="community_a_id and community_b_id must be different")
-
-    ensure_metrics_fresh(db, community_a.community_id)
-    ensure_metrics_fresh(db, community_b.community_id)
 
     row, structured_diff, tradeoffs = await compare_communities(
         db=db,

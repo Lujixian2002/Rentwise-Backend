@@ -6,13 +6,14 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db import crud
 from app.services.scoring_service import (
+    PREFERENCE_DIMENSIONS,
     compute_dimension_scores,
     compute_preference_scores,
     compute_weighted_preference_score,
     normalize_preference_weights,
 )
 
-_COMPARE_SYSTEM_PROMPT = """You generate concise neighborhood comparison summaries.
+_COMPARE_SYSTEM_PROMPT = """You generate concise neighborhood comparison summaries for the RentWise Compare page.
 Ground every statement in the provided scores, metrics, and computed differences only. Do not invent facts.
 
 Return a valid JSON object with exactly this shape:
@@ -25,12 +26,23 @@ Return a valid JSON object with exactly this shape:
 }
 
 Rules:
-1. "short_summary" should be 1-2 short sentences and mention the main tradeoff between the two communities.
-2. The strengths lists must contain only labels from the allowed dimensions provided in the input.
-3. Keep each strengths list to 0-4 items.
-4. Prefer dimensions with clearer leads over tiny differences.
-5. Use the provided community names, not the ids.
-6. If one side has little evidence, keep that side's strengths list short rather than guessing."""
+1. "short_summary" should be 2 short sentences written for a normal renter, not an analyst.
+2. Use only these five user-facing dimensions: Safety, Transit, Convenience, Parking, Environment.
+3. Explain how the user's current weights affect the result. Mention the highest-weight dimension if it matters.
+4. When explaining why a community leads, use weighted contribution points from "weighted_contributions"; use base scores only to explain the underlying dimension strength.
+5. Do not mention Cost, Trend, Noise, Nightlife, Reviews, metrics field names, ids, JSON keys, or backend/internal terms.
+6. The strengths lists must contain only labels from the allowed dimensions provided in the input.
+7. Keep each strengths list to 0-4 items.
+8. Prefer dimensions with clearer base-score leads over tiny differences.
+9. Use the provided community names, not the ids.
+10. If one side has little evidence, keep that side's strengths list short rather than guessing.
+
+Good style:
+"University Town Center leads because the current weights put a lot of emphasis on Transit, where it contributes more to the final score. University Park still looks stronger for Safety and Parking, but those advantages are not enough to overcome the weighted Transit gap."
+
+Bad style:
+"University Town Center has a weighted edge due to preference scores and nightlife."
+"""
 
 
 async def compare_communities(
@@ -107,25 +119,41 @@ async def compare_communities(
     preference_score_b = compute_preference_scores(dict_b)
 
     if normalized_weights:
-        _, a_total = compute_weighted_preference_score(
+        weighted_contributions_a, a_total = compute_weighted_preference_score(
             preference_score_a,
             normalized_weights,
         )
-        _, b_total = compute_weighted_preference_score(
+        weighted_contributions_b, b_total = compute_weighted_preference_score(
             preference_score_b,
             normalized_weights,
         )
     else:
-        a_total = sum(score_a.values())
-        b_total = sum(score_b.values())
+        default_weights = normalize_preference_weights({})
+        weighted_contributions_a, a_total = compute_weighted_preference_score(
+            preference_score_a,
+            default_weights,
+        )
+        weighted_contributions_b, b_total = compute_weighted_preference_score(
+            preference_score_b,
+            default_weights,
+        )
 
     structured_diff = {}
-    for dim in sorted(score_a.keys()):
+    for dim in PREFERENCE_DIMENSIONS:
         structured_diff[dim] = {
-            "a": score_a[dim],
-            "b": score_b[dim],
-            "winner": community_a_id if score_a[dim] >= score_b[dim] else community_b_id,
-            "delta": round(score_a[dim] - score_b[dim], 2),
+            "label": _preference_label(dim),
+            "a": preference_score_a[dim],
+            "b": preference_score_b[dim],
+            "a_weighted_contribution": weighted_contributions_a[dim],
+            "b_weighted_contribution": weighted_contributions_b[dim],
+            "winner": community_a_id
+            if preference_score_a[dim] >= preference_score_b[dim]
+            else community_b_id,
+            "delta": round(preference_score_a[dim] - preference_score_b[dim], 2),
+            "weighted_delta": round(
+                weighted_contributions_a[dim] - weighted_contributions_b[dim],
+                2,
+            ),
         }
 
     fallback_summary, fallback_tradeoffs = _build_fallback_compare_copy(
@@ -150,6 +178,8 @@ async def compare_communities(
         dimension_scores_b=score_b,
         preference_scores_a=preference_score_a,
         preference_scores_b=preference_score_b,
+        weighted_contributions_a=weighted_contributions_a,
+        weighted_contributions_b=weighted_contributions_b,
         structured_diff=structured_diff,
         total_a=a_total,
         total_b=b_total,
@@ -185,6 +215,8 @@ async def _generate_compare_copy(
     dimension_scores_b: dict[str, float],
     preference_scores_a: dict[str, float],
     preference_scores_b: dict[str, float],
+    weighted_contributions_a: dict[str, float],
+    weighted_contributions_b: dict[str, float],
     structured_diff: dict,
     total_a: float,
     total_b: float,
@@ -193,27 +225,42 @@ async def _generate_compare_copy(
     if not settings.openai_api_key:
         return {}
 
-    client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=30.0)
-    allowed_dimensions = list(structured_diff.keys())
+    client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=4.0)
+    allowed_dimensions = [_preference_label(dimension) for dimension in PREFERENCE_DIMENSIONS]
+    preference_dimension_payload = {
+        _preference_label(dimension): {
+            "weight_percent": weights_used.get(dimension, 0.0),
+            "community_a_base_score": preference_scores_a.get(dimension, 0.0),
+            "community_b_base_score": preference_scores_b.get(dimension, 0.0),
+            "community_a_weighted_contribution": weighted_contributions_a.get(
+                dimension,
+                0.0,
+            ),
+            "community_b_weighted_contribution": weighted_contributions_b.get(
+                dimension,
+                0.0,
+            ),
+            "base_score_leader": community_a_name
+            if preference_scores_a.get(dimension, 0.0)
+            >= preference_scores_b.get(dimension, 0.0)
+            else community_b_name,
+        }
+        for dimension in PREFERENCE_DIMENSIONS
+    }
     user_prompt = json.dumps(
         {
             "community_a": {
                 "id": community_a_id,
                 "name": community_a_name,
-                "metrics": metrics_a,
-                "dimension_scores": dimension_scores_a,
-                "preference_scores": preference_scores_a,
                 "overall_total": total_a,
             },
             "community_b": {
                 "id": community_b_id,
                 "name": community_b_name,
-                "metrics": metrics_b,
-                "dimension_scores": dimension_scores_b,
-                "preference_scores": preference_scores_b,
                 "overall_total": total_b,
             },
             "weights_used": weights_used,
+            "preference_dimensions": preference_dimension_payload,
             "allowed_strength_dimensions": allowed_dimensions,
             "structured_diff": structured_diff,
         },
@@ -303,7 +350,21 @@ def _top_strengths(
         key=lambda item: item[1],
         reverse=True,
     )
-    return [dimension for dimension, _ in ranked[:limit]]
+    return [
+        values.get("label", dimension)
+        for dimension, _ in ranked[:limit]
+        if (values := structured_diff.get(dimension, {}))
+    ]
+
+
+def _preference_label(dimension: str) -> str:
+    return {
+        "safety": "Safety",
+        "transit": "Transit",
+        "convenience": "Convenience",
+        "parking": "Parking",
+        "environment": "Environment",
+    }.get(dimension, dimension)
 
 
 def parse_json(text: str | None, default):
