@@ -2,9 +2,11 @@
 
 RentWise Backend is the FastAPI service for the RentWise neighborhood comparison tool. It provides community profiles, cached neighborhood metrics, renter preference recommendations, side-by-side comparisons, review data, and AI-assisted community reports for Irvine, CA rental communities.
 
-Frontend repository: https://github.com/CyberObservers/Rentwise-Frontend
+Combined repository: https://github.com/Lujixian2002/Rentwise.git
 
-Backend repository: https://github.com/Lujixian2002/rentwise-backend
+Live frontend deployment: https://rentwise-cod.pages.dev/
+
+Demo video: https://drive.google.com/file/d/1BufoYp1h5vMAkXCaezZZxoiZ-KXkTJWT/view?usp=sharing
 
 ## Team Members
 
@@ -211,8 +213,8 @@ curl -X POST http://127.0.0.1:8000/agent/chat \
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/Lujixian2002/rentwise-backend.git
-cd rentwise-backend
+git clone https://github.com/Lujixian2002/Rentwise.git
+cd Rentwise/backend
 ```
 
 ### 2. Create and activate a virtual environment
@@ -378,24 +380,22 @@ Recommended manual verification:
 8. Confirm `GET /communities/{community_id}/reviews` returns review posts for seeded communities.
 9. If `OPENAI_API_KEY` is configured, confirm `/agent/chat`, `/agent/community-report`, and `/communities/{community_id}/insight` return AI-assisted responses.
 
-## Deployment / Local-Only Status
+## Deployment Status
 
-Current status: backend is configured for local development and Docker Compose execution.
+Current status: the RentWise frontend is deployed, and the backend supports local development, Docker Compose execution, and hosted integration with the deployed frontend.
 
 - Local FastAPI server: supported.
 - Local Docker Compose with PostgreSQL: supported.
 - Seeded local database reproduction: supported.
-- Hosted deployment URL: TODO, add if deployed.
+- Live frontend deployment: https://rentwise-cod.pages.dev/
 - Frontend integration: supported through Vite `/api` proxy or `VITE_API_BASE_URL`.
 
 ## Demo Video
 
-TODO: Add final demo video link.
-
-Suggested format:
+Final demo video:
 
 ```text
-Demo video: https://...
+https://drive.google.com/file/d/1BufoYp1h5vMAkXCaezZZxoiZ-KXkTJWT/view?usp=sharing
 ```
 
 ## Known Issues / Future Work
@@ -403,7 +403,7 @@ Demo video: https://...
 - Full live data refresh depends on optional external API keys and local data assets.
 - OpenAI-powered endpoints require `OPENAI_API_KEY`; fallback behavior exists for several flows but AI-generated text will be limited without it.
 - Docker Compose starts an empty PostgreSQL database; import the seeded SQL snapshot for a ready-to-demo dataset.
-- Hosted deployment URL and demo video link still need to be added before final submission.
+- Free-tier hosted backend instances may have cold-start latency after idle periods.
 - Future work: add automated API tests for route responses and scoring behavior.
 - Future work: add migration tooling instead of relying on raw SQL snapshots.
 - Future work: add scheduled refresh jobs for metrics and reviews.
